@@ -32,6 +32,9 @@
             android:padding="10dp"
             android:background="#22888888"
             android:textIsSelectable="true"
+            android:minLines="2"
+            android:maxLines="2"
+            android:ellipsize="end"
             android:textSize="14sp" />
 
         <!-- Omarchy lane: first-run Arch Linux ARM download progress (hidden unless a download runs). -->
@@ -42,7 +45,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="8dp"
             android:max="100"
-            android:visibility="gone" />
+            android:visibility="invisible" />
 
         <!-- Omarchy lane: the guest distro. Literal labels (the strings files belong to other lanes). -->
         <TextView
@@ -339,10 +342,12 @@
                 android:text="@string/ld_copy_log" />
         </LinearLayout>
 
+        <!-- descendantFocusability=blocksDescendants: the page's ScrollView never jumps to the log as lines arrive. -->
         <ScrollView
             android:id="@+id/log_scroll"
             android:layout_width="match_parent"
             android:layout_height="260dp"
+            android:descendantFocusability="blocksDescendants"
             android:background="#FF101010">
 
             <TextView

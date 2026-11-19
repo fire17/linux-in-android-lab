@@ -346,7 +346,8 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         }
         swayBox.isEnabled = idle && Distro.current(this) == Distro.OMARCHY
         val pct = SessionBus.downloadPercent
-        rootfsProgress.visibility = if (s.state == State.INSTALLING_ROOTFS && pct in 0..100) View.VISIBLE else View.GONE
+        // INVISIBLE, not GONE: the bar keeps its space, so the buttons below never move when a download starts or ends.
+        rootfsProgress.visibility = if (s.state == State.INSTALLING_ROOTFS && pct in 0..100) View.VISIBLE else View.INVISIBLE
         if (pct in 0..100) rootfsProgress.progress = pct
         stateText.text = getString(R.string.ld_state_fmt, s.state.name, s.message)
         val active = s.state !in setOf(State.IDLE, State.STOPPED, State.ERROR)
@@ -374,7 +375,9 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         logText.append(line)
         logText.append("\n")
         if (logText.lineCount > 400) logText.text = SessionBus.logText().takeLast(20_000)
-        logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+        // scrollTo, not fullScroll(FOCUS_DOWN): fullScroll moves focus to the log text, and the page's own ScrollView
+        // then jumps to it on every line (Tami 2026-11-20: the launcher kept jumping and buttons could not be pressed).
+        logScroll.post { logScroll.scrollTo(0, (logText.height - logScroll.height).coerceAtLeast(0)) }
     }
 
     private fun openDesktop() {
