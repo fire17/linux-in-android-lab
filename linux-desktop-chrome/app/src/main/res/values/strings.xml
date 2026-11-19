@@ -35,7 +35,13 @@
     <string name="ld_opt_legacy">Legacy drawing (try this if the screen stays black)</string>
     <string name="ld_opt_noseccomp">Slow-safe PRoot mode (PROOT_NO_SECCOMP=1)</string>
     <string name="ld_opt_gpu">Allow GPU in Chromium (usually no effect inside PRoot)</string>
-    <string name="ld_opt_sound">Sound: play Linux audio on this phone (applies at next Start)</string>
+    <string name="ld_opt_sound">Sound: play Linux audio on this phone (switches at once, no restart)</string>
+    <string name="ld_opt_sound_smooth">Smoother sound: bigger buffer, fewer clicks, ~0.15 s more delay (recommendation, off)</string>
+    <string name="ld_sound_on">Sound: ON</string>
+    <string name="ld_sound_off">Sound: OFF</string>
+    <string name="ld_perf_title">Performance</string>
+    <string name="ld_perf_refresh">Measure again</string>
+    <string name="ld_perf_measuring">Measuring for 2 seconds…</string>
 
     <string name="ld_phantom_help">One-time setup (Android 12+): Chromium uses many processes, and Android kills apps with more than 32 child processes. Developer options → \"Disable child process restrictions\" turns this off. From a PC you can instead run: adb shell settings put global settings_enable_monitor_phantom_procs false</string>
     <string name="ld_open_dev_options">Open Developer options</string>

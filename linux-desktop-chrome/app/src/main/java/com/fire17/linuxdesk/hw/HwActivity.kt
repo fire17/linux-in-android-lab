@@ -63,6 +63,30 @@ class HwActivity : Activity() {
             Toast.makeText(this, R.string.ld_hw_copied, Toast.LENGTH_SHORT).show()
         }
         col.addView(intro); col.addView(summary); col.addView(buttons); col.addView(full)
+        // ld-perf: Performance — top CPU users among OUR processes (app, X server, proot, Chromium, PulseAudio),
+        // memory available, sound underruns/drops. Read-only, a 2 s sample off the UI thread.
+        val perfTitle = TextView(this).apply { setText(R.string.ld_perf_title); setPadding(0, pad, 0, 0); setTypeface(typeface, Typeface.BOLD) }
+        val perfText = TextView(this).apply {
+            setText(R.string.ld_perf_measuring); typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true)
+            setPadding(0, pad / 2, 0, pad / 2)
+        }
+        val perfAgain = Button(this).apply { setText(R.string.ld_perf_refresh); isEnabled = false }
+        PerfStat.soundLine = { com.fire17.linuxdesk.audio.AudioOut.statsLine() }
+        fun measure() {
+            perfAgain.isEnabled = false
+            perfText.setText(R.string.ld_perf_measuring)
+            Thread({
+                val text = try { PerfStat.report(2_000) } catch (t: Throwable) { "Performance: " + t.javaClass.simpleName }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    perfText.text = text
+                    perfAgain.isEnabled = true
+                }
+            }, "perf-stat").start()
+        }
+        perfAgain.setOnClickListener { measure() }
+        col.addView(perfTitle); col.addView(perfText); col.addView(perfAgain)
+        measure()
         col.addView(camTitle); col.addView(camText); col.addView(camCopy)
         Thread({
             val (text, payload) = try {

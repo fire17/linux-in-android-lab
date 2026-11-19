@@ -127,7 +127,9 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         bindCheck(R.id.opt_noseccomp, settings.prootNoSeccomp) { settings.prootNoSeccomp = it }
         bindCheck(R.id.opt_gpu, settings.useGpu) { settings.useGpu = it }
         bindGpuSupport()   // GPU v2: grey out + explain on phones without an Adreno/KGSL GPU
-        bindCheck(R.id.opt_sound, settings.sound) { settings.sound = it }
+        // Live (ld-perf): flips the running session's sound at once; also the stored value for the next Start.
+        bindCheck(R.id.opt_sound, settings.sound) { com.fire17.linuxdesk.audio.SoundSwitch.set(this, it) }
+        bindCheck(R.id.opt_sound_smooth, settings.soundSmooth) { com.fire17.linuxdesk.audio.SoundSwitch.setSmooth(this, it) }
         bindCheck(R.id.opt_mic_background, settings.micInBackground) { settings.micInBackground = it }   // live: read on each background edge
 
         // Microphone to Linux: the ONLY place consent can become true. RECORD_AUDIO is asked for only here, only
@@ -300,6 +302,8 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         onState(SessionBus.snapshot)
         syncMicSwitch(MicIn.consent)
         syncCamSwitch(PhoneCamera.consent)
+        // The desktop menu may have flipped Sound; re-show it (SoundSwitch.set ignores an unchanged value).
+        findViewById<CheckBox>(R.id.opt_sound).isChecked = settings.sound
     }
 
     override fun onStop() {

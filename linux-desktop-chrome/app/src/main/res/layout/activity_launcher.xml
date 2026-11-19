@@ -215,12 +215,20 @@
             android:textSize="12sp"
             android:text="@string/ld_gpu_hint" />
 
-        <!-- Sound out (audio/AudioOut.kt): guest audio plays on the phone speaker. Default ON. -->
+        <!-- Sound out (audio/AudioOut.kt): guest audio plays on the phone speaker. Default ON. Live (audio/SoundSwitch). -->
         <CheckBox
             android:id="@+id/opt_sound"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/ld_opt_sound" />
+
+        <!-- ld-perf recommendation, OFF until Tami approves: ~200 ms AudioTrack buffer instead of ~40 ms. -->
+        <CheckBox
+            android:id="@+id/opt_sound_smooth"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:text="@string/ld_opt_sound_smooth" />
 
         <!-- Microphone to Linux (audio/MicIn.kt). Default OFF, never persisted, resets when the session ends. -->
         <Switch

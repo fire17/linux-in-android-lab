@@ -82,6 +82,11 @@ interface RouterEnv {
      * needs no CAMERA permission, and does not depend on the in-app switch. Default = not wired.
      */
     fun camerasInfo(): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
+    /**
+     * sys.perf (ld-perf): READ-ONLY performance snapshot — top CPU users among the app's own processes (app, X server,
+     * proot, Chromium, PulseAudio), MemAvailable, sound underruns/drops. Blocks ~1 s (a /proc sample). Default = not wired.
+     */
+    fun perfInfo(): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
     fun version(): String
     fun now(): Long = System.currentTimeMillis()
     fun onAppClosed() {}
@@ -428,6 +433,10 @@ class Router(
             // cam.* deny below, and "sys.cameras" does not start with either prefix, so capture stays denied.
             verb == "sys.cameras" -> pool.execute {
                 done(try { Reply.Json(env.camerasInfo()) } catch (t: Throwable) { err("internal", t.javaClass.simpleName) })
+            }
+            // Read-only, like sys.logs (ld-perf): a /proc CPU sample + memory + sound counters. Changes nothing.
+            verb == "sys.perf" -> pool.execute {
+                done(try { Reply.Json(env.perfInfo()) } catch (t: Throwable) { err("internal", t.javaClass.simpleName) })
             }
             family == "fs" -> {
                 gate(verb, family)?.let { done(it); return }

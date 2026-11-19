@@ -38,11 +38,22 @@ class LinuxDeskSettings(context: Context) {
 
     /**
      * Sound out: guest audio (PulseAudio null sink) plays through the phone speaker. Default ON (Tami asked for
-     * sound). Applied at the next session start. OFF = PulseAudio is not started for sound, Chromium is muted.
+     * sound). LIVE since ld-perf (Tami, voice 21:36, "בהגדרות יהיה אפשר להחליט לעשות טוגל אם הספיקרים יוצאים או
+     * לא"): flipping it in a running session stops/starts AudioOut at once and mutes/unmutes the "ld" sink
+     * (SessionService.ACTION_SOUND_APPLY); no restart. The stored value also decides the next session's start.
      */
     var sound: Boolean
         get() = p.getBoolean("sound", true)
         set(v) = p.edit().putBoolean("sound", v).apply()
+
+    /**
+     * ld-perf recommendation, OFF until Tami approves: a larger AudioTrack buffer (~200 ms instead of ~40 ms) and
+     * normal (not low-latency) mode. Fewer clicks when proot/Chromium steal the CPU, at the cost of ~150 ms more
+     * delay between video and sound. Applied when the sound stream (re)connects.
+     */
+    var soundSmooth: Boolean
+        get() = p.getBoolean("sound_smooth", false)
+        set(v) = p.edit().putBoolean("sound_smooth", v).apply()
 
     /**
      * Microphone to Linux, kept ON across sessions. Tami (voice AC132525, 2026-11-19 21:01): "אפשר שהמיקרופון יהיה

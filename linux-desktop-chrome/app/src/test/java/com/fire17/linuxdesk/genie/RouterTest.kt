@@ -116,6 +116,9 @@ class RouterTest {
         override fun camerasInfo(): JSONObject { camInfoCalls++
             return JSONObject().put("ok", true).put("exposed", 2).put("default", "0")
                 .put("cameras", JSONArray().put(JSONObject().put("id", "0")).put(JSONObject().put("id", "1"))) }
+        @Volatile var perfCalls = 0
+        override fun perfInfo(): JSONObject { perfCalls++
+            return JSONObject().put("ok", true).put("cpu_total", 4.2).put("top", JSONArray()) }
         override fun onAppClosed() { appClosedCalls++ }
         override fun log(line: String) { logs += line }
     }
@@ -283,6 +286,18 @@ class RouterTest {
         assertEquals(1, env.camInfoCalls)                    // denied verbs never reached the inventory
         assertTrue(relay.calls.isEmpty())
         assertFalse(Router.isCameraVerb("sys.cameras"))
+    }
+
+    /** ld-perf: sys.perf is a read-only sys.* verb — served without the window gate or the relay. */
+    @Test fun sysPerfIsReadOnlyAndUngated() {
+        val w = authed()
+        env.window = false
+        val r = cmd(w, "sys.perf", 1)
+        assertTrue(r.toString(), r.optBoolean("ok")); assertEquals(4.2, r.getDouble("cpu_total"), 1e-9)
+        assertEquals(1, env.perfCalls)
+        assertEquals("unknown_cmd", cmd(w, "sys.perf.kill", 2).getString("error"))   // no sub-verbs
+        assertEquals(1, env.perfCalls)
+        assertTrue(relay.calls.isEmpty())
     }
 
     @Test fun badJsonKeepsConnectionOpen() {

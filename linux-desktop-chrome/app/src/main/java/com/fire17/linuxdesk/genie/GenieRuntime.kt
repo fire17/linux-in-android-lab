@@ -347,6 +347,11 @@ object GenieRuntime {
         // Cameras v4 sys.cameras: read-only inventory + generic default (no openCamera, no CAMERA permission).
         override fun camerasInfo(): JSONObject = com.fire17.linuxdesk.camera.CameraDiag
             .json(com.fire17.linuxdesk.camera.CameraDiag.read(ctx)).put("ok", true)
+        // ld-perf sys.perf: read-only /proc sample (1 s) + MemAvailable + AudioOut counters.
+        override fun perfInfo(): JSONObject {
+            com.fire17.linuxdesk.hw.PerfStat.soundLine = { com.fire17.linuxdesk.audio.AudioOut.statsLine() }
+            return com.fire17.linuxdesk.hw.PerfStat.json(1_000).put("ok", true)
+        }
         // Read straight from prefs (pair owns GenieSettings and adds the getter + switch); default OFF.
         override fun wideWindowGate(): Boolean =
             ctx.getSharedPreferences("ld.genie", Context.MODE_PRIVATE).getBoolean("wide_window_gate", false)

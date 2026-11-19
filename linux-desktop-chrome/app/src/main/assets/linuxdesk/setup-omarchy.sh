@@ -141,14 +141,14 @@ fi
 # xorg-fonts-misc      X core fonts ("fixed", "cursor"); linked into usr/share/fonts/X11 below for lorie
 # xdotool xwininfo...  fit-window.sh / deskd input + window geometry
 # i3-wm i3status rofi  the tiling desktop, its bar, and the launcher (Super+Space); dunst notifications; feh wallpaper
-# alacritty            terminal (Omarchy's foot is Wayland-only)
+# alacritty xterm      terminal (Omarchy's foot is Wayland-only); xterm = fallback when there is no OpenGL
 # noto-fonts(-emoji)   Hebrew + emoji glyphs; ttf-dejavu Latin; ttf-jetbrains-mono-nerd-basic is Omarchy's font (repo)
 # python               the genie (deskd) and the theme renderer below
 # pulseaudio libpulse  sound out / mic in. The app's PulseHost (audio lane) installs with apk, which Arch lacks; it
 #                      skips its install when /etc/linuxdesk/audio-v1 and /usr/bin/pulseaudio exist, so this
 #                      script installs them and writes that marker (pactl/parec are in libpulse on Arch).
 PKGS="xkeyboard-config xorg-fonts-misc xorg-fonts-alias-misc xorg-mkfontscale xdotool xorg-xwininfo xorg-xprop"
-PKGS="$PKGS xorg-xsetroot xorg-xrandr i3-wm i3status rofi dunst feh alacritty btop"
+PKGS="$PKGS xorg-xsetroot xorg-xrandr i3-wm i3status rofi dunst feh alacritty xterm btop"
 PKGS="$PKGS noto-fonts noto-fonts-emoji ttf-dejavu ttf-liberation ttf-jetbrains-mono-nerd-basic fontconfig python pulseaudio libpulse"
 stage 5 "Installing Chrome, i3, fonts and tools"
 if ! stage_done; then

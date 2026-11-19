@@ -151,6 +151,11 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
         m.menu.add(0, 3, 2, R.string.ld_back_to_launcher)
         m.menu.add(0, 4, 3, R.string.ld_stop)
         m.menu.add(0, 5, 4, if (keyBarOn()) R.string.ld_keybar_hide else R.string.ld_keybar_show)
+        // Quick Sound toggle (ld-perf, Tami 21:36): checkable item showing the current state; live, no restart.
+        m.menu.add(0, 6, 5, R.string.ld_sound_on).apply {
+            isCheckable = true
+            isChecked = com.fire17.linuxdesk.audio.SoundSwitch.isOn(this@DesktopActivity)
+        }
         m.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> SessionService.start(this, SessionService.ACTION_RESTART_BROWSER)
@@ -158,6 +163,11 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
                 3 -> startActivity(Intent(this, LauncherActivity::class.java).putExtra(LauncherActivity.EXTRA_STAY, true))
                 4 -> SessionService.start(this, SessionService.ACTION_STOP)
                 5 -> setKeyBar(!keyBarOn())
+                6 -> {
+                    val on = com.fire17.linuxdesk.audio.SoundSwitch.toggle(this)
+                    android.widget.Toast.makeText(this, if (on) R.string.ld_sound_on else R.string.ld_sound_off,
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
             true
         }
