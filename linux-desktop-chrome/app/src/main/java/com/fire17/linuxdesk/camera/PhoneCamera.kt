@@ -52,11 +52,15 @@ object PhoneCamera {
     }
 
     /** config.js contents for the guest extension. Port 0 = off (main.js then does nothing). Pure; testable. */
-    fun configJs(port: Int, token: String): String {
+    fun configJs(port: Int, token: String, askPerPage: Boolean = ASK_PER_PAGE): String {
         val safe = token.filter { it.isLetterOrDigit() }
         return "// Written by LinuxDesk at session start. Port 0 = phone camera off.\n" +
-            "var __LINUXDESK_CAM__ = { port: $port, token: \"$safe\" };\n"
+            "var __LINUXDESK_CAM__ = { port: $port, token: \"$safe\", ask: $askPerPage };\n"
     }
+
+    /** Extra per-page "Allow … to use the phone camera?" prompt in the extension. A recommendation, so OFF until
+     *  Tami turns it on (the master switch is the consent today). */
+    const val ASK_PER_PAGE = false
 
     /** Writes rootfs/opt/linuxdesk/phone-camera/config.js for the current server state (off when not running). */
     fun writeConfig(rootfsDir: File) {

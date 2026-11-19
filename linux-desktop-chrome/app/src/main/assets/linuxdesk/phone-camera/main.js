@@ -85,9 +85,21 @@
     });
   }
 
+  // The fake device bypasses Chromium's own camera prompt. Optional extra (cfg.ask, default OFF until Tami says so):
+  // ask once per page load, per frame origin.
+  let allowed = !cfg.ask;
+  function askOnce() {
+    if (allowed) return true;
+    let ok = false;
+    try { ok = window.confirm("Allow " + (location.origin || "this page") + " to use the phone camera?"); } catch (_) {}
+    allowed = ok;
+    return ok;
+  }
+
   md.getUserMedia = async function (constraints) {
     const c = constraints || {};
     if (!(await wantsPhone(c.video))) return origGUM(constraints);
+    if (!askOnce()) throw new DOMException("Permission denied", "NotAllowedError");
     const videoTrack = await phoneTrack(c.video);
     let tracks = [videoTrack];
     if (c.audio) {

@@ -126,6 +126,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         bindCheck(R.id.opt_legacy, settings.legacyDrawing) { settings.legacyDrawing = it }
         bindCheck(R.id.opt_noseccomp, settings.prootNoSeccomp) { settings.prootNoSeccomp = it }
         bindCheck(R.id.opt_gpu, settings.useGpu) { settings.useGpu = it }
+        bindGpuSupport()   // GPU v2: grey out + explain on phones without an Adreno/KGSL GPU
         bindCheck(R.id.opt_sound, settings.sound) { settings.sound = it }
 
         // Microphone to Linux: the ONLY place consent can become true. RECORD_AUDIO is asked for only here, only
@@ -252,6 +253,23 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             syncMicSwitch(false)
             Toast.makeText(this, R.string.ld_mic_denied, Toast.LENGTH_LONG).show()
         }
+    }
+
+    /**
+     * GPU acceleration (experimental, OFF by default) works only with Adreno (/dev/kgsl-3d0). Elsewhere the switch
+     * is disabled and says why. The probe opens the node read-only (cheap, no GL), so it runs on the UI thread.
+     */
+    private fun bindGpuSupport() {
+        val hint = findViewById<TextView>(R.id.gpu_hint)
+        val cb = findViewById<CheckBox>(R.id.opt_gpu)
+        val why = when (com.fire17.linuxdesk.gpu.GpuSession.support()) {
+            com.fire17.linuxdesk.gpu.GpuMode.Support.SUPPORTED -> return
+            com.fire17.linuxdesk.gpu.GpuMode.Support.UNSUPPORTED_GPU -> R.string.ld_gpu_unsupported
+            com.fire17.linuxdesk.gpu.GpuMode.Support.NODE_BLOCKED -> R.string.ld_gpu_blocked
+            com.fire17.linuxdesk.gpu.GpuMode.Support.UNSUPPORTED_ABI -> R.string.ld_gpu_abi
+        }
+        cb.isEnabled = false
+        hint.setText(why)
     }
 
     private fun bindCheck(id: Int, value: Boolean, set: (Boolean) -> Unit) {
