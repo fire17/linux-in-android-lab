@@ -2,6 +2,11 @@
 <resources>
     <string name="ld_tagline">‏Chromium מלא של לינוקס בתוך האפליקציה. המסך של הטלפון הוא המסך של הלינוקס.</string>
     <string name="ld_channel_name">סשן LinuxDesk</string>
+    <string name="ld_mic_switch">מיקרופון ללינוקס</string>
+    <string name="ld_mic_help">כבוי כברירת מחדל. כשהוא פועל, אפליקציות בלינוקס (למשל Chromium) שומעות את המיקרופון של הטלפון. רק המתג הזה יכול להפעיל אותו, לא הג׳יני. נכבה כשהסשן נגמר. שום דבר לא נשמר בדיסק.</string>
+    <string name="ld_mic_on_text">המיקרופון פועל · לינוקס שומעת את הטלפון</string>
+    <string name="ld_mic_stop">עצירת המיקרופון</string>
+    <string name="ld_mic_denied">לא ניתנה הרשאה למיקרופון, אז הוא נשאר כבוי.</string>
     <string name="ld_notification_text">סשן לינוקס פעיל (שרת X ו-Chromium)</string>
 
     <string name="ld_start">הפעלה</string>
