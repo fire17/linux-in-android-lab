@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">LinuxInApp</string>
+    <string name="status_starting">Starting…</string>
+    <string name="status_extracting">Installing Alpine rootfs (first launch)…</string>
+    <string name="status_ready">Alpine Linux (PRoot) ready</string>
+    <string name="status_selftest_running">Running self-test…</string>
+    <string name="status_finished">Shell exited (status %1$d) — tap Restart</string>
+    <string name="btn_selftest">Self-test</string>
+    <string name="btn_restart">Restart</string>
+    <string name="btn_keyboard" translatable="false">⌨</string>
+    <string name="selftest_title">Self-test: uname -a; cat /etc/os-release; id</string>
+    <string name="copy">Copy</string>
+    <string name="notif_channel">Linux session</string>
+    <string name="notif_text">Alpine shell running under PRoot</string>
+</resources>

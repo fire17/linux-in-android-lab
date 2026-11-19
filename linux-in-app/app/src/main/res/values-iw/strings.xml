@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="status_starting">מתחיל…</string>
+    <string name="status_extracting">מתקין את Alpine (הפעלה ראשונה)…</string>
+    <string name="status_ready">לינוקס Alpine (PRoot) מוכן</string>
+    <string name="status_selftest_running">מריץ בדיקה עצמית…</string>
+    <string name="status_finished">ה-shell הסתיים (סטטוס %1$d) — לחץ הפעל מחדש</string>
+    <string name="btn_selftest">בדיקה</string>
+    <string name="btn_restart">הפעל מחדש</string>
+    <string name="selftest_title">בדיקה עצמית: uname -a; cat /etc/os-release; id</string>
+    <string name="copy">העתק</string>
+    <string name="notif_channel">סשן לינוקס</string>
+    <string name="notif_text">Alpine רץ בתוך PRoot</string>
+</resources>
