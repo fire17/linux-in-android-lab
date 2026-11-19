@@ -53,6 +53,15 @@ class LinuxDeskSettings(context: Context) {
         get() = p.getBoolean("mic_always_on", true)
         set(v) = p.edit().putBoolean("mic_always_on", v).apply()
 
+    /**
+     * Phone camera "relay-only" privacy mode (cameras v3). OFF by default (a recommendation; Tami decides): pages
+     * get frames straight from 127.0.0.1 and can see the port and token. ON: pages never see port/token; every frame
+     * goes through the extension's service worker (slower: one base64 hop per frame). Live, no restart.
+     */
+    var cameraRelayOnly: Boolean
+        get() = p.getBoolean("camera_relay_only", false)
+        set(v) = p.edit().putBoolean("camera_relay_only", v).apply()
+
     /** Off by default: inside proot there is no GPU device, so Chromium uses software compositing. */
     var useGpu: Boolean
         get() = p.getBoolean("useGpu", false)

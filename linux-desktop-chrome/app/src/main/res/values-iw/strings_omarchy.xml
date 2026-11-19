@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Omarchy lane: full-screen first-run setup + boot screen (K/OmarchySetupActivity). -->
+<resources>
+    <string name="ld_omarchy_title">Omarchy</string>
+    <string name="ld_omarchy_subtitle">Arch Linux ARM במראה של Omarchy, בתוך LinuxDesk</string>
+    <string name="ld_omarchy_pct">%1$d%%</string>
+    <string name="ld_omarchy_stage_of">שלב %1$d מתוך %2$d · %3$s</string>
+    <string name="ld_omarchy_starting">מתחיל …</string>
+    <string name="ld_omarchy_downloading">מוריד את Arch Linux ARM</string>
+    <string name="ld_omarchy_extracting">פורס את Arch Linux ARM</string>
+    <string name="ld_omarchy_stage_1">מגדיר את pacman עבור PRoot</string>
+    <string name="ld_omarchy_stage_2">מאתחל את מחזיק המפתחות של pacman</string>
+    <string name="ld_omarchy_stage_3">מעדכן את Arch Linux ARM (שדרוג מלא)</string>
+    <string name="ld_omarchy_stage_4">מוסיף את מאגר Omarchy</string>
+    <string name="ld_omarchy_stage_5">מתקין Chrome‏, i3, גופנים וכלים</string>
+    <string name="ld_omarchy_stage_6">מתקין את ערכות הנושא של Omarchy</string>
+    <string name="ld_omarchy_stage_7">מחיל את המראה של Omarchy</string>
+    <string name="ld_omarchy_booting">מפעיל את שולחן העבודה של Omarchy</string>
+    <string name="ld_omarchy_up">Omarchy פועל</string>
+    <string name="ld_omarchy_log_heading">יומן חי</string>
+    <string name="ld_omarchy_failed">ההתקנה נעצרה</string>
+    <string name="ld_omarchy_failed_hint">בדוק את החיבור לרשת ולחץ על \"נסה שוב\". שלבים שהסתיימו נשמרים.</string>
+    <string name="ld_omarchy_retry">נסה שוב</string>
+    <string name="ld_omarchy_open_desktop">פתח את שולחן העבודה</string>
+    <string name="ld_omarchy_back">חזרה</string>
+</resources>

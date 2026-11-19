@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Omarchy lane: full-screen first-run setup + boot screen (K/OmarchySetupActivity). -->
+<resources>
+    <string name="ld_omarchy_title">Omarchy</string>
+    <string name="ld_omarchy_subtitle">Arch Linux ARM with Omarchy\'s look, inside LinuxDesk</string>
+    <string name="ld_omarchy_pct">%1$d%%</string>
+    <string name="ld_omarchy_stage_of">Step %1$d of %2$d · %3$s</string>
+    <string name="ld_omarchy_starting">Starting …</string>
+    <string name="ld_omarchy_downloading">Downloading Arch Linux ARM</string>
+    <string name="ld_omarchy_extracting">Unpacking Arch Linux ARM</string>
+    <string name="ld_omarchy_stage_1">Configuring pacman for PRoot</string>
+    <string name="ld_omarchy_stage_2">Initialising the pacman keyring</string>
+    <string name="ld_omarchy_stage_3">Updating Arch Linux ARM (full upgrade)</string>
+    <string name="ld_omarchy_stage_4">Adding the Omarchy repository</string>
+    <string name="ld_omarchy_stage_5">Installing Chrome, i3, fonts and tools</string>
+    <string name="ld_omarchy_stage_6">Installing the Omarchy themes</string>
+    <string name="ld_omarchy_stage_7">Applying the Omarchy look</string>
+    <string name="ld_omarchy_booting">Starting the Omarchy desktop</string>
+    <string name="ld_omarchy_up">Omarchy is up</string>
+    <string name="ld_omarchy_log_heading">Live log</string>
+    <string name="ld_omarchy_failed">Setup stopped</string>
+    <string name="ld_omarchy_failed_hint">Check the network, then tap Retry. Finished steps are kept.</string>
+    <string name="ld_omarchy_retry">Retry</string>
+    <string name="ld_omarchy_open_desktop">Open desktop</string>
+    <string name="ld_omarchy_back">Back</string>
+</resources>

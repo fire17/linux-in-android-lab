@@ -23,6 +23,8 @@ object OtaHealth {
         timeoutMs: Long = 10 * 60_000L,
         deskdGraceMs: Long = 30_000L,
         async: Boolean = true,
+        /** A real sys.ping round-trip to deskd (true = ok reply). Default: trust [deskdUp] alone (pre-round-3 behaviour). */
+        deskdPing: () -> Boolean = { true },
     ) {
         try {
             store.beginSession()
@@ -31,14 +33,14 @@ object OtaHealth {
             return
         }
         val run = Runnable {
-            try { judge(store, windowUp, failed, deskdUp, stopping, timeoutMs, deskdGraceMs) } catch (_: Throwable) {}
+            try { judge(store, windowUp, failed, deskdUp, stopping, timeoutMs, deskdGraceMs, deskdPing) } catch (_: Throwable) {}
         }
         if (async) Thread(run, "LinuxDeskOtaHealth").apply { isDaemon = true; start() } else run.run()
     }
 
     private fun judge(
         store: BundleStore, windowUp: () -> Boolean, failed: () -> Boolean, deskdUp: () -> Boolean,
-        stopping: () -> Boolean, timeoutMs: Long, deskdGraceMs: Long,
+        stopping: () -> Boolean, timeoutMs: Long, deskdGraceMs: Long, deskdPing: () -> Boolean,
     ) {
         val end = System.currentTimeMillis() + timeoutMs
         while (!windowUp() && !failed() && !stopping() && System.currentTimeMillis() < end) Thread.sleep(250)
@@ -47,6 +49,8 @@ object OtaHealth {
         val dEnd = System.currentTimeMillis() + deskdGraceMs
         while (!deskdUp() && !stopping() && System.currentTimeMillis() < dEnd) Thread.sleep(250)
         if (stopping() && !deskdUp()) { store.abandonTrialSession(); return }
-        store.reportHealth(pingOk = true, deskdUp = deskdUp())
+        // deskd up = relay connected AND a sys.ping round-trip answers ok (retried 3× so one slow reply is not a rollback).
+        val up = deskdUp() && (1..3).any { i -> deskdPing() || run { if (i < 3) Thread.sleep(1_000); false } }
+        store.reportHealth(pingOk = true, deskdUp = up)
     }
 }

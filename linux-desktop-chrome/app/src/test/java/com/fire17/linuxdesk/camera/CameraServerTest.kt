@@ -62,10 +62,19 @@ class CameraServerTest {
 
     @Test fun stateJsonOffHidesPortTokenAndCams() {
         val off = PhoneCamera.stateJson(false, 4321, "secret", "[{\"id\":\"0\"}]")
-        assertEquals("{\"enabled\":false,\"port\":0,\"token\":\"\",\"ask\":false,\"cams\":[]}\n", off)
+        assertEquals("{\"enabled\":false,\"port\":0,\"token\":\"\",\"ask\":false,\"relayOnly\":false,\"cams\":[]}\n", off)
         val on = PhoneCamera.stateJson(true, 4321, "ab\"cd", "[{\"id\":\"0\"}]")
-        assertEquals("{\"enabled\":true,\"port\":4321,\"token\":\"abcd\",\"ask\":false,\"cams\":[{\"id\":\"0\"}]}\n", on)
+        assertEquals("{\"enabled\":true,\"port\":4321,\"token\":\"abcd\",\"ask\":false,\"relayOnly\":false,\"cams\":[{\"id\":\"0\"}]}\n", on)
         assertTrue("\"enabled\":false" in PhoneCamera.stateJson(true, 0, "x", "[]"))   // no port = off
+    }
+
+    @Test fun relayOnlyKeepsPortAndTokenOutOfPageScripts() {
+        val js = PhoneCamera.configJs(4321, "secret", relay = true)
+        assertFalse("4321" in js); assertFalse("secret" in js)
+        assertTrue("relayOnly: true" in js); assertTrue("enabled: true" in js)
+        assertTrue("relayOnly: false" in PhoneCamera.configJs(4321, "secret"))   // default OFF
+        assertTrue("\"relayOnly\":true" in PhoneCamera.stateJson(true, 4321, "s", "[]", relay = true))
+        assertTrue("\"relayOnly\":false" in PhoneCamera.stateJson(false, 4321, "s", "[]", relay = true))   // off = off
     }
 
     @Test fun camJsonIsValidShape() {

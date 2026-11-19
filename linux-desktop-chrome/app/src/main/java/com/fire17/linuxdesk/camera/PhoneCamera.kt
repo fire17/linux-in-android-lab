@@ -3,6 +3,7 @@ package com.fire17.linuxdesk.camera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import com.fire17.linuxdesk.LinuxDeskSettings
 import java.io.File
 
 /**
@@ -37,6 +38,11 @@ object PhoneCamera {
     @Volatile private var sessionToken: String? = null
     @Volatile private var lastPort = 0
 
+    /** Relay-only privacy mode (LinuxDeskSettings.cameraRelayOnly, default OFF): config.js and the page-facing
+     *  state carry no port/token; bg.js keeps them and relays every frame. */
+    @Volatile var relayOnly = false
+        private set
+
     /** True when the running Chromium was launched with the phone-camera extension. */
     @Volatile var extensionLoaded = false
         private set
@@ -53,6 +59,7 @@ object PhoneCamera {
     @Synchronized
     fun start(ctx: Context): CameraServer? {
         if (!consent || !hasPermission(ctx)) return null
+        relayOnly = try { LinuxDeskSettings(ctx).cameraRelayOnly } catch (_: Throwable) { relayOnly }
         server?.let { return it }
         val tok = sessionToken ?: CameraServer.newToken().also { sessionToken = it }
         val s = CameraServer(ctx.applicationContext, tok, lastPort)
@@ -61,6 +68,22 @@ object PhoneCamera {
         lastPort = s.port
         server = s
         return s
+    }
+
+    /**
+     * The relay-only switch. Saves it, and if it turns ON while the server runs, restarts the server on the same port
+     * with a NEW token: pages that already saw the old token lose it. The caller then rewrites the config
+     * (SessionService ACTION_CAMERA_APPLY → writeConfig). Returns true if a running server was restarted.
+     */
+    @Synchronized
+    fun setRelayOnly(ctx: Context, on: Boolean): Boolean {
+        LinuxDeskSettings(ctx).cameraRelayOnly = on
+        val changed = relayOnly != on
+        relayOnly = on
+        if (!changed || !on || server == null) return false
+        stop()
+        sessionToken = CameraServer.newToken()
+        return start(ctx) != null
     }
 
     @Synchronized
@@ -84,19 +107,24 @@ object PhoneCamera {
         return if (extensionLoaded) listOf(EXTENSION_DIR) else emptyList()
     }
 
-    /** config.js contents. Port 0 / enabled:false = off (main.js then adds no camera). Pure; testable. */
-    fun configJs(port: Int, token: String, askPerPage: Boolean = ASK_PER_PAGE, enabled: Boolean = port > 0): String {
-        val safe = token.filter { it.isLetterOrDigit() }
+    /** config.js contents (MAIN world, so readable by pages). Port 0 / enabled:false = off. [relay] = relay-only:
+     *  no port/token at all, enabled only says "use the relay". Pure; testable. */
+    fun configJs(port: Int, token: String, askPerPage: Boolean = ASK_PER_PAGE, enabled: Boolean = port > 0,
+                 relay: Boolean = false): String {
+        val safe = if (relay) "" else token.filter { it.isLetterOrDigit() }
+        val p = if (relay) 0 else port
         return "// Written by LinuxDesk. Port 0 / enabled:false = phone camera off. Live state: state.json.\n" +
-            "var __LINUXDESK_CAM__ = { enabled: $enabled, port: $port, token: \"$safe\", ask: $askPerPage };\n"
+            "var __LINUXDESK_CAM__ = { enabled: $enabled, port: $p, token: \"$safe\", ask: $askPerPage, relayOnly: $relay };\n"
     }
 
     /** state.json contents ([camsJson] = CameraServer /cams array). Pure; testable. */
-    fun stateJson(enabled: Boolean, port: Int, token: String, camsJson: String, askPerPage: Boolean = ASK_PER_PAGE): String {
+    fun stateJson(enabled: Boolean, port: Int, token: String, camsJson: String, askPerPage: Boolean = ASK_PER_PAGE,
+                  relay: Boolean = false): String {
         val safe = token.filter { it.isLetterOrDigit() }
         val on = enabled && port > 0
+        // state.json is NOT web-accessible: only bg.js reads it, and bg.js strips port/token for pages when relayOnly.
         return "{\"enabled\":$on,\"port\":${if (on) port else 0},\"token\":\"${if (on) safe else ""}\"," +
-            "\"ask\":$askPerPage,\"cams\":${if (on) camsJson else "[]"}}\n"
+            "\"ask\":$askPerPage,\"relayOnly\":${on && relay},\"cams\":${if (on) camsJson else "[]"}}\n"
     }
 
     /** Writes rootfs/opt/linuxdesk/phone-camera/{config.js,state.json} for the current server state. */
@@ -105,10 +133,10 @@ object PhoneCamera {
         if (!dir.isDirectory) return
         val s = server
         val cams = s?.cams?.joinToString(",", "[", "]") { it.json() } ?: "[]"
-        File(dir, "config.js").writeText(if (s != null) configJs(s.port, s.token) else configJs(0, ""))
+        File(dir, "config.js").writeText(if (s != null) configJs(s.port, s.token, relay = relayOnly) else configJs(0, ""))
         // Write-then-rename so the service worker never reads half a file.
         val tmp = File(dir, "state.json.tmp")
-        tmp.writeText(if (s != null) stateJson(true, s.port, s.token, cams) else stateJson(false, 0, "", "[]"))
+        tmp.writeText(if (s != null) stateJson(true, s.port, s.token, cams, relay = relayOnly) else stateJson(false, 0, "", "[]"))
         if (!tmp.renameTo(File(dir, "state.json"))) File(dir, "state.json").writeText(tmp.readText())
     }
 }

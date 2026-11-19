@@ -67,6 +67,14 @@ object GenieRuntime {
     private val listener: () -> Unit = { reconcileAsync() }
     /** OTA v1 health check: deskd's relay is connected (it answered the hello). */
     fun deskdReady(): Boolean = relay?.ready() == true
+    /** OTA v1 health check: a real sys.ping round-trip to deskd (blocking, ≤ [timeoutMs]); true only on an ok reply. */
+    fun deskdPing(timeoutMs: Long = 5_000): Boolean {
+        val r = relay ?: return false
+        if (!r.ready()) return false
+        val q = java.util.concurrent.ArrayBlockingQueue<Boolean>(1)
+        r.call(JSONObject().put("cmd", "sys.ping"), timeoutMs) { q.offer(it.header.optBoolean("ok", false) && !it.header.has("error")) }
+        return try { q.poll(timeoutMs + 1_000, java.util.concurrent.TimeUnit.MILLISECONDS) == true } catch (_: InterruptedException) { false }
+    }
 
     private fun log(s: String) = SessionBus.log("genie: $s")
 

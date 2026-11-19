@@ -30,4 +30,13 @@ class OtaAutoCheckTest {
         assertNull(OtaAutoCheck.maybeRun(st, true, "http://example.invalid/", now = t0 + OtaAutoCheck.INTERVAL_MS, async = false))
         assertEquals(0L, st.activeVersion())                 // nothing ever applied
     }
+
+    @Test
+    fun onAppliedNotCalledWhenNothingApplied() {
+        val st = store()
+        var called = 0L
+        OtaAutoCheck.maybeRun(st, true, "http://example.invalid/", async = false, onApplied = { called = it })
+        assertEquals(0L, called)
+        assertEquals("Update 7 ready, applies at next start", OtaAutoCheck.readyLine(7))
+    }
 }

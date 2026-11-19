@@ -71,6 +71,26 @@ class OtaHealthTest {
     }
 
     @Test
+    fun relayUpButPingFailsRollsBack() {
+        val st = applied(Files.createTempDirectory("ota").toFile())
+        var pings = 0
+        OtaHealth.start(st, { true }, { false }, { true }, { false }, timeoutMs = 300, deskdGraceMs = 300, async = false,
+            deskdPing = { pings++; false })
+        assertEquals(3, pings)
+        assertEquals(0L, st.activeVersion())
+    }
+
+    @Test
+    fun oneSlowPingIsRetriedNotRolledBack() {
+        val st = applied(Files.createTempDirectory("ota").toFile())
+        var pings = 0
+        OtaHealth.start(st, { true }, { false }, { true }, { false }, timeoutMs = 300, deskdGraceMs = 300, async = false,
+            deskdPing = { ++pings >= 2 })
+        assertEquals(1L, st.activeVersion())
+        assertFalse(st.state().getBoolean("trial"))
+    }
+
+    @Test
     fun apkUpgradeClearsActiveBundle0Wins() {
         val dir = Files.createTempDirectory("ota").toFile()
         val st = applied(dir, appCode = 281)

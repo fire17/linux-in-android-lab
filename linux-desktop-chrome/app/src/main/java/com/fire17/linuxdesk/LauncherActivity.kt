@@ -158,10 +158,13 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             settings.homeUrl = ChromiumFlags.normalizeUrl(url.text.toString())
             autoOpened = false
             ensureNotificationPermission()
-            SessionService.start(this, SessionService.ACTION_START)
             // Omarchy: the install and the boot are shown full screen (Tami AC21A217), not as a launcher spinner.
-            if (Distro.current(this) == Distro.OMARCHY) {
-                com.fire17.linuxdesk.linux.OmarchyRun.reset()
+            // Reset BEFORE start, so the new session's first lines are never wiped.
+            val omarchy = Distro.current(this) == Distro.OMARCHY
+            if (omarchy) com.fire17.linuxdesk.linux.OmarchyRun.reset()
+            SessionService.start(this, SessionService.ACTION_START)
+            if (omarchy) {
+                com.fire17.linuxdesk.linux.OmarchyRun.setupShown = true   // onState must not open it a second time
                 autoOpened = true   // OmarchySetupActivity opens the desktop itself when X comes up
                 startActivity(Intent(this, OmarchySetupActivity::class.java))
             }
@@ -319,6 +322,14 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         if (xUp && !autoOpened && s.state != State.BROWSER_EXITED) {
             autoOpened = true
             openDesktop()
+        }
+        // Omarchy installing but its setup screen not shown yet (e.g. started from the notification or a resumed
+        // launcher): open it once; it then opens the desktop itself when X comes up.
+        val installing = s.state == State.INSTALLING_ROOTFS || s.state == State.INSTALLING_PACKAGES
+        if (installing && Distro.current(this) == Distro.OMARCHY && !com.fire17.linuxdesk.linux.OmarchyRun.setupShown) {
+            com.fire17.linuxdesk.linux.OmarchyRun.setupShown = true
+            autoOpened = true
+            startActivity(Intent(this, OmarchySetupActivity::class.java))
         }
     }
 

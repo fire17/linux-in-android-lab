@@ -20,6 +20,8 @@ object OtaAutoCheck {
         baseUrl: String,
         now: Long = System.currentTimeMillis(),
         async: Boolean = true,
+        /** Called with the activated bundle version (the session shows a notification + a sys.logs line). */
+        onApplied: (Long) -> Unit = {},
     ): String? {
         if (!enabled) return "off"
         val stamp = File(store.root, "last_auto_check")
@@ -28,18 +30,25 @@ object OtaAutoCheck {
         // A bundle still on trial must be judged before another one replaces it.
         if (store.state().optBoolean("trial")) return "trial_pending"
         try { store.root.mkdirs(); stamp.writeText(now.toString()) } catch (_: Exception) { return "io" }
-        val run = Runnable { try { checkAndStage(store, baseUrl) } catch (_: Throwable) {} }
+        val run = Runnable {
+            val v = try { checkAndStage(store, baseUrl) } catch (_: Throwable) { null }
+            if (v != null) try { onApplied(v) } catch (_: Throwable) {}
+        }
         if (async) Thread(run, "LinuxDeskOtaAutoCheck").apply { isDaemon = true; start() } else run.run()
         return null
     }
 
-    private fun checkAndStage(store: BundleStore, baseUrl: String) {
+    /** @return the activated version, or null when nothing was applied. */
+    internal fun checkAndStage(store: BundleStore, baseUrl: String): Long? {
         val r = store.checkRemote(baseUrl + "manifest.json")
         if (r !is BundleVerifier.Result.Ok) {
             store.ledger("auto_check", org.json.JSONObject().put("result", (r as BundleVerifier.Result.Rejected).reason))
-            return
+            return null
         }
         store.downloadAndStage(baseUrl + "manifest.json", baseUrl + "bundle.zip", channel = "https_auto")
-        store.activateStaged(consentMode = "auto")
+        return store.activateStaged(consentMode = "auto")
     }
+
+    /** The one-line text for the notification and the sys.logs line. */
+    fun readyLine(version: Long) = "Update $version ready, applies at next start"
 }

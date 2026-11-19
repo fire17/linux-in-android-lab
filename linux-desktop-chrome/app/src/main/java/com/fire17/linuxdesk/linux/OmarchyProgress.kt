@@ -93,13 +93,14 @@ class OmarchyProgress {
             return true
         }
         if (line.startsWith("error: ")) {
-            lastError = line
+            // pacman's specific cause ("failed retrieving file … 404") beats its generic summary that follows it.
+            if (!(line.startsWith("error: failed to commit transaction") && lastError.startsWith("error: "))) lastError = line
             set(snapshot.percent, snapshot.stage, snapshot.detail, snapshot.phase)
             return true
         }
         if (line.startsWith("[omarchy] ")) {
             val msg = line.removePrefix("[omarchy] ")
-            if (msg.contains("failed") || msg.startsWith("no browser")) lastError = line
+            if ((msg.contains("failed") || msg.startsWith("no browser")) && !lastError.startsWith("error: ")) lastError = line
             if (msg.startsWith("i3 started") || msg.startsWith("exec ")) {
                 set(maxOf(snapshot.percent, 97), "Starting the Omarchy desktop", msg, Phase.BOOT)
             } else {
@@ -116,10 +117,15 @@ class OmarchyProgress {
 
     private fun setupStage() = stageText.ifEmpty { "Installing packages" }
 
-    /** 45..95 across the script stages; inside a stage, by packages installed when pacman reported a count. */
+    /**
+     * 45..95 across the script stages; inside a stage, by packages installed when pacman reported a count. Without
+     * LINUXDESK_STAGE markers (an older setup script) the whole setup is one stage of about [SETUP_PKGS] packages,
+     * so the first small pacman transaction (e.g. removing the kernel, 15 packages) cannot fill the bar.
+     */
     private fun setupPercent(): Int {
         val per = 50.0 / stageTotal
-        val within = if (pkgTotal > 0) (pkgDone.toDouble() / pkgTotal).coerceIn(0.0, 1.0) else 0.0
+        val denom = if (stageIdx == 0) maxOf(pkgTotal, SETUP_PKGS) else pkgTotal
+        val within = if (denom > 0) (pkgDone.toDouble() / denom).coerceIn(0.0, 1.0) else 0.0
         val done = (stageIdx - 1).coerceAtLeast(0) + within
         return (45 + per * done).toInt().coerceIn(45, 95)
     }
@@ -133,6 +139,8 @@ class OmarchyProgress {
 
     companion object {
         const val EXTRACT_FILES = 25_000
+        /** Measured 2026-11-19: ~146 upgrades + 15 removals + ~120–190 new packages in a full first-run setup. */
+        const val SETUP_PKGS = 330
         private val STAGE = Regex("""LINUXDESK_STAGE (\d+)/(\d+) (.+)""")
         private val PACKAGES = Regex("""^Packages \((\d+)\)""")
         private val INSTALLING =
