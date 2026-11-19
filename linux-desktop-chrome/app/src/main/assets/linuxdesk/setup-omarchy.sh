@@ -52,6 +52,181 @@ sync_db() {
   done
   SYNCED=1
 }
+
+# 8. Omarchy's apps (optional) ------------------------------------------------------------------------------------
+# `setup-omarchy.sh apps`: Omarchy's end-user apps that can run on X11 + i3 under PRoot (notes/omarchy-apps.md has the
+# full add / skip / substitute list with reasons). start-omarchy.sh starts it in the BACKGROUND while its marker
+# (/etc/linuxdesk/omarchy-stage-8 = APPS_REV) is missing, so the first-run setup and the 7-stage bar stay as they were,
+# and rootfs that finished setup earlier get the apps at their next Start. Never fatal: one package per pacman call
+# (one failure does not block the rest), every failure goes to $APPS_FAILED. After APPS_TRIES passes that still had
+# failures the marker is written anyway (a package gone from the repo must not cost a -Syy at every Start).
+# Small apps first, LibreOffice (467 MiB) and Obsidian (363 MiB) last.
+APPS_REV=1
+APPS_TRIES=3
+APPS_PKGS="omacalc omawrite omacut hype signed monologue imv mpv thunar flameshot xcolor xclip pulseaudio-alsa"
+APPS_PKGS="$APPS_PKGS lazygit dust fastfetch herdr tobi-try cliamp papers localsend pinta mise-bin obsidian libreoffice-fresh"
+# Web apps: Omarchy's (omarchy-settings 4.5 skel + install/packaging/webapps.sh), opened as Chrome app windows.
+# name|url|icon (Omarchy's hicolor icon name; google-chrome when Omarchy ships none)
+APPS_WEB="WhatsApp|https://web.whatsapp.com/|whatsapp
+YouTube|https://youtube.com/|youtube
+ChatGPT|https://chatgpt.com/|chatgpt
+X|https://x.com/|x
+Discord|https://discord.com/channels/@me|omarchy-discord
+Zoom|https://app.zoom.us/wc/home|zoom
+HEY|https://app.hey.com|hey
+Basecamp|https://launchpad.37signals.com|basecamp
+Google Photos|https://photos.google.com/|google-photos
+Google Contacts|https://contacts.google.com/|google-contacts
+Google Messages|https://messages.google.com/web/conversations|google-messages
+Google Maps|https://maps.google.com|google-maps
+GitHub|https://github.com/|google-chrome
+Figma|https://figma.com/|google-chrome
+Fizzy|https://app.fizzy.do/|google-chrome
+Netflix|https://www.netflix.com/|google-chrome
+Spotify|https://open.spotify.com/|google-chrome"
+# Terminal apps without their own launcher entry (or with Terminal=true, which rofi would open in a terminal it does
+# not have): desktop-id|Name|binary|command|icon. They run in Omarchy's terminal (terminal.sh: alacritty, xterm fallback).
+APPS_TUI='lazygit|Lazygit|lazygit|lazygit|utilities-terminal
+disk-usage|Disk Usage|dust|sh -c "dust -r; read x"|disk-usage
+fastfetch|Fastfetch|fastfetch|sh -c "fastfetch; read x"|utilities-terminal
+herdr|Herdr|herdr|herdr|utilities-terminal
+cliamp|cliamp|cliamp|cliamp|cliamp
+btop|Activity Monitor|btop|btop|btop
+nvim|Neovim|nvim|nvim|nvim
+vim|Vim|vim|vim|gvim'
+APPS_DESK=/usr/local/share/applications
+APPS_FAILED=/etc/linuxdesk/omarchy-apps.failed
+APPS_LOCK=/etc/linuxdesk/omarchy-apps.lock
+PACMAN_LCK=/var/lib/pacman/db.lck
+# Memory guard. 2026-11-19 22:49 Android's low-memory killer SIGKILLed Tami's session (pulse + deskd) while a 1.18 GB
+# download ran with swap nearly full, and this stage runs next to the live desktop. Before each package: wait (30 s
+# steps, max 20 min) until MemAvailable >= 1.5 GB and SwapFree >= 1 GB; the two big ones (LibreOffice 467 MiB,
+# Obsidian 363 MiB) need MemAvailable >= 2.5 GB. Still low after 20 min: the pass stops without its marker and
+# without counting as a pass, and the next Start resumes. No swap at all (SwapTotal 0) skips the swap rule; an
+# unreadable meminfo never blocks. LINUXDESK_MEMINFO overrides the file (dry runs).
+MEMINFO=${LINUXDESK_MEMINFO:-/proc/meminfo}
+APPS_MEM_KB=1572864
+APPS_MEM_BIG_KB=2621440
+APPS_SWAP_KB=1048576
+APPS_BIG="obsidian libreoffice-fresh"
+mem_kb() { awk -v k="$1:" '$1 == k { print $2; exit }' "$MEMINFO" 2>/dev/null; }
+mem_ok() {  # mem_ok <MemAvailable kB needed>; sets AVAIL_MB / SWAP_MB for the log
+  avail=$(mem_kb MemAvailable); swapf=$(mem_kb SwapFree); swapt=$(mem_kb SwapTotal)
+  [ -n "$avail" ] || return 0
+  AVAIL_MB=$((avail / 1024)); SWAP_MB=$(( ${swapf:-0} / 1024 ))
+  [ "$avail" -ge "$1" ] || return 1
+  [ "${swapt:-0}" -eq 0 ] || [ "${swapf:-0}" -ge "$APPS_SWAP_KB" ] || return 1
+  return 0
+}
+wait_for_mem() {  # wait_for_mem <MemAvailable kB needed>; 1 = still low after 20 minutes
+  i=0
+  while ! mem_ok "$1"; do
+    if [ "$i" -ge 40 ]; then return 1; fi
+    [ $((i % 10)) -eq 0 ] && log "apps: waiting for memory (avail $AVAIL_MB MB, swap $SWAP_MB MB; need $(($1 / 1024)) MB)"
+    sleep 30; i=$((i + 1))
+  done
+  return 0
+}
+desk_entry() {  # desk_entry <desktop-id> <Name> <Exec> <Icon> [Categories]
+  printf '[Desktop Entry]\nType=Application\nVersion=1.0\nName=%s\nExec=%s\nIcon=%s\nTerminal=false\nCategories=%s\n' \
+    "$2" "$3" "$4" "${5:-Utility;}" > "$APPS_DESK/$1.desktop"
+}
+apps_main() {
+  MARK8=$MARK/omarchy-stage-8
+  [ "$(cat "$MARK8" 2>/dev/null || true)" = "$APPS_REV" ] && { log "apps: already done"; return 0; }
+  mkdir -p "$MARK" "$APPS_DESK"
+  # One run at a time ("Restart browser" runs start-omarchy.sh again). flock frees the lock when the run dies.
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"$APPS_LOCK"
+    flock -n 9 || { log "apps: another run is installing; not starting a second one"; return 0; }
+  fi
+  # Another pacman (e.g. the genie or GPU setup) may hold the lock: wait for it, up to 10 minutes.
+  w=0
+  while [ -e "$PACMAN_LCK" ] && command -v pgrep >/dev/null 2>&1 && pgrep -x pacman >/dev/null 2>&1 && [ "$w" -lt 120 ]; do
+    sleep 5; w=$((w + 1))
+  done
+  # proot --kill-on-exit ends a run that was still installing when the browser closed, leaving pacman's lock behind.
+  if [ -e "$PACMAN_LCK" ] && command -v pgrep >/dev/null 2>&1 && ! pgrep -x pacman >/dev/null 2>&1; then log "apps: removing a stale pacman lock"; rm -f "$PACMAN_LCK"; fi
+
+  # Web apps need no download; write them first.
+  printf '%s\n' "$APPS_WEB" | while IFS='|' read -r name url icon; do
+    [ -n "$name" ] || continue
+    id=linuxdesk-webapp-$(printf '%s' "$name" | tr 'A-Z ' 'a-z-')
+    desk_entry "$id" "$name" "sh /opt/linuxdesk/omarchy/browser.sh --app=$url" "$icon" "Network;WebBrowser;"
+  done
+  n_web=$(printf '%s\n' "$APPS_WEB" | grep -c '|')
+  log "apps: $n_web web app entries in $APPS_DESK"
+
+  attempt=1
+  until pacman -Syy --noconfirm; do
+    if [ "$attempt" -ge 3 ]; then log "apps: pacman -Syy failed 3 times (no network?); next Start tries again"; return 0; fi
+    attempt=$((attempt + 1)); log "apps: retrying pacman -Syy in 5s"; sleep 5
+  done
+
+  # Omarchy's app icons (WhatsApp, HEY, Disk Usage, ...) live in omarchy-settings; take only its hicolor icons.
+  if [ ! -f /usr/share/icons/hicolor/48x48/apps/whatsapp.png ]; then
+    pacman -Sw --noconfirm --nodeps --nodeps omarchy-settings >/dev/null 2>&1 || log "apps: note: could not download omarchy-settings (icons)"
+    SPKG=$(ls -t /var/cache/pacman/pkg/omarchy-settings-[0-9]*.pkg.tar.zst 2>/dev/null | head -1 || true)
+    if [ -n "$SPKG" ]; then
+      bsdtar -xf "$SPKG" -C / 'usr/share/icons/hicolor/*' || log "apps: note: icon extract failed"
+      rm -f "$SPKG"
+    fi
+  fi
+
+  : > "$APPS_FAILED"
+  ok=0; bad=0; lowmem=0
+  for p in $APPS_PKGS; do
+    if pacman -Q "$p" >/dev/null 2>&1; then ok=$((ok + 1)); continue; fi
+    need=$APPS_MEM_KB
+    case " $APPS_BIG " in *" $p "*) need=$APPS_MEM_BIG_KB ;; esac
+    if ! wait_for_mem "$need"; then
+      lowmem=1; log "apps: memory still low after 20 min (avail $AVAIL_MB MB, swap $SWAP_MB MB); stopping before $p, the next Start resumes"
+      break
+    fi
+    log "apps: installing $p"
+    if pacman -S --needed --noconfirm "$p" || { sleep 3; pacman -S --needed --noconfirm "$p"; }; then
+      ok=$((ok + 1))
+    elif pacman -Q "$p" >/dev/null 2>&1; then
+      ok=$((ok + 1)); log "apps: $p installed (pacman reported errors, often harmless hook failures under PRoot)"
+    else
+      bad=$((bad + 1)); echo "$p" >> "$APPS_FAILED"; log "apps: FAILED $p"
+    fi
+  done
+  pacman -Scc --noconfirm >/dev/null 2>&1 || true
+
+  # Launcher fixes. Our entries live in /usr/local/share/applications, which rofi (XDG data dirs) reads before
+  # /usr/share, so a same-named entry here replaces the package's.
+  printf '%s\n' "$APPS_TUI" | while IFS='|' read -r id name bin cmd icon; do
+    [ -n "$id" ] && command -v "$bin" >/dev/null 2>&1 || continue
+    desk_entry "$id" "$name" "sh /opt/linuxdesk/omarchy/terminal.sh $cmd" "$icon" "System;TerminalEmulator;"
+  done
+  # Electron cannot use its setuid sandbox under PRoot (Chrome runs with --no-sandbox for the same reason).
+  if command -v obsidian >/dev/null 2>&1; then desk_entry obsidian Obsidian "obsidian --no-sandbox %U" obsidian "Office;"; fi
+  # Every installed app must be in rofi: report the ones without any launcher entry.
+  for d in omacalc omawrite omacut hype signed monologue imv mpv thunar org.flameshot.Flameshot xcolor org.gnome.Papers \
+           localsend com.github.PintaProject.Pinta obsidian libreoffice-writer; do
+    if [ ! -f "$APPS_DESK/$d.desktop" ] && [ ! -f "/usr/share/applications/$d.desktop" ]; then log "apps: note: no launcher entry $d.desktop"; fi
+  done
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS_DESK" >/dev/null 2>&1 || true
+  command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q /usr/share/icons/hicolor >/dev/null 2>&1 || true
+
+  if [ "$lowmem" = 1 ]; then
+    log "apps: $ok of $(echo $APPS_PKGS | wc -w | tr -d ' ') packages installed, $bad failed (stopped for memory; not counted as a pass)"
+    return 0
+  fi
+  tries=$(( $(cat "$MARK/omarchy-apps.tries" 2>/dev/null || echo 0) + 1 ))
+  echo "$tries" > "$MARK/omarchy-apps.tries"
+  log "apps: $ok of $(echo $APPS_PKGS | wc -w | tr -d ' ') packages installed, $bad failed (pass $tries)"
+  if [ "$bad" -eq 0 ] || [ "$tries" -ge "$APPS_TRIES" ]; then
+    echo "$APPS_REV" > "$MARK8"
+    [ "$bad" -eq 0 ] || log "apps: giving up on: $(tr '\n' ' ' < "$APPS_FAILED")(listed in $APPS_FAILED)"
+  else
+    log "apps: next Start retries: $(tr '\n' ' ' < "$APPS_FAILED")"
+  fi
+  return 0
+}
+if [ "${1:-}" = apps ]; then apps_main; exit 0; fi
+
 log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m)"
 
 # 1. pacman under proot -----------------------------------------------------------------------------------------

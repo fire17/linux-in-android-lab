@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ld_gestures">מחוות שולחן עבודה (לחיצה ארוכה = קליק ימני, 2 אצבעות = גלילה, החלקה ב-3 אצבעות = שולחן עבודה)</string>
+    <string name="ld_gestures_on">מחוות שולחן עבודה: פועל</string>
+    <string name="ld_gestures_off">מחוות שולחן עבודה: כבוי</string>
+</resources>

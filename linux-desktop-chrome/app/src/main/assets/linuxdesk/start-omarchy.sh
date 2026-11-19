@@ -37,6 +37,16 @@ if ! grep -q "$(sed -n 's/^I3_REV = "\(.*\)"$/\1/p' /opt/linuxdesk/omarchy/omarc
   python3 /opt/linuxdesk/omarchy/omarchy-theme.py "$(cat /etc/linuxdesk/omarchy-theme 2>/dev/null || echo tokyo-night)"
 fi
 
+# Omarchy's apps (setup-omarchy.sh stage 8, optional): installed in the background while the desktop is already up,
+# for new and for already-installed rootfs (the first-run setup skips stages by their markers and never sees stage 8).
+# Its "apps:" lines go to the session log; pacman's full output to /etc/linuxdesk/omarchy-apps.log. setup-omarchy.sh
+# holds a lock, so a second Start (or "Restart browser") does not start a second install. Never blocks the browser.
+if [ "$(cat /etc/linuxdesk/omarchy-stage-8 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then
+  echo "[omarchy] installing Omarchy's apps in the background (log: /etc/linuxdesk/omarchy-apps.log)"
+  ( nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh apps 2>&1 | tee -a /etc/linuxdesk/omarchy-apps.log \
+      | grep --line-buffered '^\[omarchy\] apps:' ) &
+fi
+
 # Drop flags that fight a window manager.
 n=$#
 while [ "$n" -gt 0 ]; do

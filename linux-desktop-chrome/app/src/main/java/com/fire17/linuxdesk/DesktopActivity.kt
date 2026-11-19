@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -34,13 +35,16 @@ import com.termux.x11.MainActivity
  *    window size,
  *  - the bottom key bar (x11/DesktopKeyBar: Super+Space, Super, Space, Esc, Tab, Ctrl, Alt, Shift, Enter,
  *    arrows), sent as real X key events through LorieView.sendKeyEvent; shown by default, hidden/shown from the
- *    long-press menu (remembered).
+ *    long-press menu (remembered),
+ *  - desktop gestures (x11/DesktopGestures: long-press = right click, 2-finger drag = scroll wheel, 3-finger
+ *    horizontal swipe = i3 workspace), which see every touch before lorie; on by default, a long-press menu switch.
  */
 class DesktopActivity : MainActivity(), SessionBus.Listener {
 
     private val ui = Handler(Looper.getMainLooper())
     private var status: TextView? = null
     private var keyBar: com.fire17.linuxdesk.x11.DesktopKeyBar? = null
+    private var gestures: com.fire17.linuxdesk.x11.DesktopGestures? = null
     private val poll = object : Runnable {
         override fun run() {
             val v = lorieView
@@ -59,6 +63,7 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
         super.onCreate(savedInstanceState)
         if (lorieView == null) return
         addOverlay()
+        installGestures()
         installGestureExclusion()
         SessionBus.addListener(this)
         onState(SessionBus.snapshot)
@@ -69,6 +74,10 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
         keyBar?.keys?.releaseAll()   // never leave Super/Ctrl/... held down in X while the display is not shown
         super.onPause()
     }
+
+    // Before lorie's own touch listener (on LorieView's parent): DesktopGestures replays to it what it does not take.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
+        gestures?.dispatch(ev) ?: super.dispatchTouchEvent(ev)
 
     override fun onDestroy() {
         ui.removeCallbacks(poll)
@@ -137,6 +146,29 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
         addContentView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
+    private fun installGestures() {
+        val v = lorieView ?: return
+        val g = com.fire17.linuxdesk.x11.DesktopGestures(v,
+            mouse = { x, y, b, down, rel -> v.sendMouseEvent(x, y, b, down, rel) },
+            wheel = { dx, dy -> v.sendMouseWheelEvent(dx, dy) },
+            key = { code, down -> v.sendKeyEvent(0, code, down) },
+            pass = { e -> super.dispatchTouchEvent(e) })
+        g.enabled = gesturesOn()
+        // Buttons over the display (keyboard button, lorie's extra keys) are skipped by DesktopGestures itself;
+        // the key bar's modifiers are touch-listener views, not clickable ones, so it is named here.
+        g.covered = { x, y -> hits(keyBar, x, y) }
+        gestures = g
+    }
+
+    private fun hits(view: View?, x: Float, y: Float): Boolean {
+        if (view == null || view.visibility != View.VISIBLE || !view.isAttachedToWindow) return false
+        val at = IntArray(2)
+        view.getLocationInWindow(at)
+        return x >= at[0] && y >= at[1] && x < at[0] + view.width && y < at[1] + view.height
+    }
+
+    private fun gesturesOn() = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_GESTURES, true)
+
     private fun keyBarOn() = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_BAR, true)
 
     private fun setKeyBar(on: Boolean) {
@@ -156,6 +188,7 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
             isCheckable = true
             isChecked = com.fire17.linuxdesk.audio.SoundSwitch.isOn(this@DesktopActivity)
         }
+        m.menu.add(0, 7, 6, R.string.ld_gestures).apply { isCheckable = true; isChecked = gesturesOn() }
         m.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> SessionService.start(this, SessionService.ACTION_RESTART_BROWSER)
@@ -166,6 +199,13 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
                 6 -> {
                     val on = com.fire17.linuxdesk.audio.SoundSwitch.toggle(this)
                     android.widget.Toast.makeText(this, if (on) R.string.ld_sound_on else R.string.ld_sound_off,
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
+                7 -> {
+                    val on = !gesturesOn()
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_GESTURES, on).apply()
+                    gestures?.enabled = on
+                    android.widget.Toast.makeText(this, if (on) R.string.ld_gestures_on else R.string.ld_gestures_off,
                         android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
@@ -193,5 +233,6 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
     private companion object {
         const val PREFS = "linuxdesk_desktop"
         const val KEY_BAR = "keyBar"
+        const val KEY_GESTURES = "desktopGestures"
     }
 }

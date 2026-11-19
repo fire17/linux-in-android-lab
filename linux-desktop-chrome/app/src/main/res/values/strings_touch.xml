@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Desktop gestures (x11/DesktopGestures), the display's long-press menu. -->
+    <string name="ld_gestures">Desktop gestures (long-press = right click, 2 fingers = scroll, 3-finger swipe = workspace)</string>
+    <string name="ld_gestures_on">Desktop gestures: ON</string>
+    <string name="ld_gestures_off">Desktop gestures: OFF</string>
+</resources>
