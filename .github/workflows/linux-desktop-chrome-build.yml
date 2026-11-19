@@ -176,6 +176,11 @@ jobs:
 
       - uses: android-actions/setup-android@v4
 
+      # The iroh path (Conn.iroh) needs pip iroh==1.1.0 on the runner; without it the job still runs the TCP path.
+      - name: Install pip iroh 1.1.0 (genie side of the iroh link)
+        continue-on-error: true
+        run: python3 -m pip install --user iroh==1.1.0 && python3 -c "import iroh; print('iroh ok')"
+
       - name: genie-client unit tests (host, vs fake_desk)
         continue-on-error: true
         working-directory: ${{ env.APP_DIR }}

@@ -87,6 +87,9 @@ adb shell run-as $PKG cat shared_prefs/ld.genie.xml 2>&1 | tee -a "$LOG"   # ld.
 adb logcat -c || true
 adb logcat -v time -s LinuxDeskSession:* LinuxDeskX11:* LinuxDesk:* RootfsInstaller:* FocusBridge:* AndroidRuntime:E > "$LOGCAT" 2>&1 &
 LOGCAT_PID=$!
+# Unfiltered too: iroh / uniffi / JNA log under their own tags (lead's ask, for the real-phone iroh bug).
+adb logcat -v time > "$OUT/logcat-all.txt" 2>&1 &
+LOGCAT_ALL_PID=$!
 say "autostart session"
 adb shell am start -n $PKG/.LauncherActivity --ez autostart true --es url about:blank 2>&1 | tee -a "$LOG"
 
@@ -136,6 +139,54 @@ CODE=$(adb shell run-as $PKG cat shared_prefs/ld.binding.xml 2>/dev/null \
   | sed -n 's/.*<string name="code">\([A-Z0-9]\{6\}\)<\/string>.*/\1/p' | head -1 | tr -d '\r')
 say "pairing code: ${CODE:-<none found>}"
 if [ -n "$CODE" ] && run_cli pair pair --code "$CODE" && grep -q "paired with" "$OUT/pair.out"; then pass pair; else fail pair; fi
+
+# ------------------------------------------------------------------------------------------------ iroh
+# The real phone is unreachable over iroh ("No addressing information available", empty _iroh TXT record).
+# Same path here: derive the node id from ld.binding "sk" (the iroh secret; never printed, only its PUBLIC
+# id is), look up the discovery TXT record, then try the iroh transport from the runner.
+# A code pairs exactly once and the TCP pair above used it, so `pair --line` over iroh should get the
+# refusal "bound". ANY reply from the phone means iroh reached the Router: IROH_PAIR=REACHED. Then
+# `ping --iroh` with the paired token (copied in the 0600 store to the node-id name) tests the full path.
+IROH_PY=no; IROH_NODE=-; IROH_SK=no; IROH_DNS=-; IROH_PAIR=FAIL; IROH_PING=FAIL
+python3 -c 'import iroh' 2>/dev/null && IROH_PY=yes
+say "iroh: pip iroh importable on runner: $IROH_PY"
+say "iroh: logcat lines so far:"
+grep -aiE 'genie link|iroh|IrohLink|uniffi|jna|UnsatisfiedLink' "$OUT/logcat-all.txt" | tail -40 | tee -a "$LOG"
+if [ "$IROH_PY" = yes ]; then
+  IROH_NODE=$(adb shell run-as $PKG cat shared_prefs/ld.binding.xml 2>/dev/null | python3 -c '
+import base64, re, sys
+m = re.search(r"<string name=\"sk\">([^<]+)</string>", sys.stdin.read())
+if not m: print("-"); sys.exit()
+import iroh
+print(str(iroh.SecretKey.from_bytes(base64.b64decode(m.group(1))).public()))   # public id only
+' 2>>"$LOG" | tr -d '\r')
+  [ -n "$IROH_NODE" ] || IROH_NODE=-
+  [ "$IROH_NODE" != "-" ] && IROH_SK=yes
+fi
+say "iroh: ld.binding sk present: $IROH_SK (absent = IrohLink never called Binding.secretKey); node id: $IROH_NODE"
+if [ "$IROH_NODE" != "-" ]; then
+  Z32=$(python3 -c '
+import sys
+b = bytes.fromhex(sys.argv[1]); A = "ybndrfg8ejkmcpqxot1uwisza345h769"
+bits = "".join(format(x, "08b") for x in b); bits += "0" * (-len(bits) % 5)
+print("".join(A[int(bits[i:i+5], 2)] for i in range(0, len(bits), 5)))' "$IROH_NODE" 2>/dev/null)
+  TXT=$(curl -s --max-time 15 "https://dns.google/resolve?name=_iroh.$Z32.dns.iroh.link&type=TXT" || true)
+  say "iroh: DoH _iroh.$Z32.dns.iroh.link TXT -> $TXT"
+  echo "$TXT" | grep -q '"Answer"' && IROH_DNS=published || IROH_DNS=empty
+  say "\$ linuxdesk --iroh pair --line \"LINUXDESK <node>:<CODE>\""
+  python3 "$CLIENT_DIR/linuxdesk.py" --genie ci:genie-e2e --timeout 90 pair --line "LINUXDESK $IROH_NODE:${CODE:-XXXXXX}" > "$OUT/iroh-pair.out" 2>&1
+  rc=$?; cat "$OUT/iroh-pair.out" >> "$LOG"; echo "[exit $rc]" >> "$LOG"
+  if grep -q "paired with" "$OUT/iroh-pair.out"; then IROH_PAIR=PAIRED
+  elif grep -q "linuxdesk: error" "$OUT/iroh-pair.out"; then IROH_PAIR=REACHED; fi
+  if [ -f "$LINUXDESK_HOME/local.json" ] && [ ! -f "$LINUXDESK_HOME/$IROH_NODE.json" ]; then
+    cp -p "$LINUXDESK_HOME/local.json" "$LINUXDESK_HOME/$IROH_NODE.json"
+  fi
+  say "\$ linuxdesk --iroh <node> ping"
+  python3 "$CLIENT_DIR/linuxdesk.py" --iroh "$IROH_NODE" --genie ci:genie-e2e --timeout 90 ping > "$OUT/iroh-ping.out" 2>&1
+  rc=$?; cat "$OUT/iroh-ping.out" >> "$LOG"; echo "[exit $rc]" >> "$LOG"
+  [ $rc = 0 ] && IROH_PING=PASS
+fi
+say "STEP iroh: node=$IROH_NODE dns=$IROH_DNS pair=$IROH_PAIR ping=$IROH_PING"
 
 # ------------------------------------------------------------------------------------------------ verbs
 if run_cli ping ping && ! grep -q '"error"' "$OUT/ping.out"; then pass ping; else fail ping; fi
@@ -189,7 +240,10 @@ for _ in $(seq 1 18); do adb shell run-as $PKG test -s $SELF && break; sleep 10;
 adb shell run-as $PKG cat $SELF > "$OUT/selftest.log" 2>&1 || true
 say "selftest.log:"; cat "$OUT/selftest.log" | tee -a "$LOG"
 adb exec-out screencap -p > "$OUT/final.png" 2>/dev/null || true
-kill $LOGCAT_PID 2>/dev/null || true
+kill $LOGCAT_PID $LOGCAT_ALL_PID 2>/dev/null || true
+say "logcat (genie|iroh|deskd|uniffi|jna|UnsatisfiedLink|FATAL), whole run:"
+{ adb logcat -d; cat "$OUT/logcat-all.txt"; } 2>/dev/null \
+  | grep -aE 'genie|Genie|iroh|IrohLink|deskd|uniffi|jna|UnsatisfiedLink|FATAL' | awk '!seen[$0]++' >> "$LOG"
 grep -E 'genie:|\[deskd\]|selftest' "$LOGCAT" | tail -120 >> "$LOG"
 
 # Scrub: the paired token must not appear in anything we upload (the CLI never prints it; this proves it).
@@ -211,9 +265,9 @@ for p in glob.glob(os.path.join(out, "*")):
 print("token scrub: %d token(s) known, %d occurrence(s) redacted" % (len(toks), hits))
 PY
 rm -rf "$LINUXDESK_HOME"
-rm -f "$OUT"/*.out "$PREFS_XML"
+rm -f "$OUT"/*.out "$PREFS_XML" "$OUT/logcat-all.txt"
 
 line="SUMMARY genie-e2e:"; ok=0
 for s in pair ping sh sh-root open tree type click shot; do line="$line $s=${RES[$s]}"; [ "${RES[$s]}" = PASS ] && ok=$((ok+1)); done
-say "$line ($ok/9)"
+say "$line ($ok/9) | iroh: py=$IROH_PY sk=$IROH_SK dns=$IROH_DNS pair=$IROH_PAIR ping=$IROH_PING"
 [ $ok = 9 ]
