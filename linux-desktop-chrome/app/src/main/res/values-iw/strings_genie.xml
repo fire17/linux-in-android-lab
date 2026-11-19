@@ -33,6 +33,8 @@
     <string name="ld_genie_refuse_locked_help">כבוי כברירת מחדל. פועל: הג\'יני לא יכול להריץ פקודות או להשתמש בעכבר ובמקלדת כשהטלפון נעול.</string>
     <string name="ld_genie_xor_guard">גישה לכל הקבצים או גישה לג\'יני, לא שניהם — כבוי כברירת מחדל</string>
     <string name="ld_genie_xor_guard_help">כבוי כברירת מחדל. פועל: אי אפשר להפעיל גישה לג\'יני כשיש ל-LinuxDesk גישה לכל הקבצים שלך, כדי שפקודה בתוך LinuxDesk לא תגיע לקבצים שלך בלי האישור שלך.</string>
+    <string name="ld_genie_wide_gate">לדרוש שהאפליקציה תהיה על המסך לכל פעולה של הג\'יני — כבוי כברירת מחדל</string>
+    <string name="ld_genie_wide_gate_help">כבוי: כמו ב-Storage Genie, רק סריקה ובקשות מחיקה דורשות ש-LinuxDesk יהיה על המסך (או היה על המסך ב-2 הדקות האחרונות). פועל: כל פעולה של הג\'יני דורשת את זה.</string>
     <string name="ld_genie_local_link">מפתחים: חיבור מקומי</string>
     <string name="ld_genie_local_link_help">‏כבוי כברירת מחדל. רק לבדיקות דרך USB: חיבור בכתובת ‎127.0.0.1:8766‎ (‎adb forward tcp:8766 tcp:8766‎). גם הוא דורש את החיבור לג\'יני.</string>
 

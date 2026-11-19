@@ -84,6 +84,7 @@ class RouterTest {
         @Volatile var window = true
         @Volatile var locked = false
         @Volatile var xor = false
+        @Volatile var wide = false
         @Volatile var appClosedCalls = 0
         val fsCalls = CopyOnWriteArrayList<JSONObject>()
         val logs = CopyOnWriteArrayList<String>()
@@ -101,6 +102,8 @@ class RouterTest {
         override fun windowOpen() = window
         override fun lockedRefusal() = locked
         override fun xorBlocks() = xor
+        override fun wideWindowGate() = wide
+        override fun fsInfo(): JSONObject = JSONObject().put("fs_mode", "scoped")
         override fun fs(cmd: JSONObject): Reply { fsCalls += cmd; return fsReply(cmd) }
         override fun version() = "0.1.0-test"
         override fun onAppClosed() { appClosedCalls++ }
@@ -316,15 +319,50 @@ class RouterTest {
 
     // ------------------------------------------------------------------ gates (02 §03)
 
-    @Test fun windowClosedGatesActingVerbsOnly() {
+    @Test fun windowClosedDefaultGatesOnlyStorageGenieThree() {
         val w = authed()
         env.window = false
         assertEquals("app_closed", cmd(w, "fs.scan", 1).getString("error"))
+        assertEquals("app_closed", cmd(w, "fs.propose_delete", 2, JSONObject().put("paths", JSONArray())).getString("error"))
+        assertEquals("app_closed", cmd(w, "fs.execute", 3, JSONObject().put("proposal", "p")).getString("error"))
+        assertEquals(3, env.appClosedCalls)
+        // The Linux machine stays under the genie's control with the app off screen (02 §03, SG parity).
+        assertTrue(cmd(w, "shell.exec", 4, JSONObject().put("sh", "x")).getBoolean("ok"))
+        assertTrue(cmd(w, "input.click", 5).getBoolean("ok"))
+        assertTrue(cmd(w, "browser.tabs", 6).getBoolean("ok"))
+        assertTrue(cmd(w, "screen.capture", 7).getBoolean("ok"))
+        assertTrue(cmd(w, "fs.list", 8).getBoolean("ok"))
+        assertTrue(cmd(w, "fs.get", 9, JSONObject().put("path", "a")).getBoolean("ok"))
+        assertTrue(cmd(w, "sys.ping", 10).getBoolean("ok"))
+    }
+
+    @Test fun wideWindowGateSettingGatesEveryActingVerb() {
+        val w = authed()
+        env.window = false
+        env.wide = true
+        assertEquals("app_closed", cmd(w, "fs.scan", 1).getString("error"))
         assertEquals("app_closed", cmd(w, "shell.exec", 2, JSONObject().put("sh", "x")).getString("error"))
-        assertTrue(env.appClosedCalls >= 2)
-        assertTrue(cmd(w, "sys.ping", 3).getBoolean("ok"))
-        assertTrue(cmd(w, "fs.proposal", 4, JSONObject().put("proposal", "p")).getBoolean("ok"))
-        assertTrue(cmd(w, "fs.log", 5).getBoolean("ok"))
+        assertEquals("app_closed", cmd(w, "browser.tabs", 3).getString("error"))
+        assertEquals("app_closed", cmd(w, "fs.list", 4).getString("error"))
+        assertTrue(cmd(w, "sys.ping", 5).getBoolean("ok"))
+        assertTrue(cmd(w, "fs.proposal", 6, JSONObject().put("proposal", "p")).getBoolean("ok"))
+        assertTrue(cmd(w, "fs.log", 7).getBoolean("ok"))
+        assertTrue(cmd(w, "shell.kill", 8, JSONObject().put("sid", "nope")).has("error"))   // not app_closed
+        assertFalse(cmd(w, "shell.kill", 9, JSONObject().put("sid", "nope")).getString("error") == "app_closed")
+    }
+
+    @Test fun windowOpenNothingGatedEvenWide() {
+        val w = authed()
+        env.wide = true
+        assertTrue(cmd(w, "fs.scan", 1).getBoolean("ok"))
+        assertTrue(cmd(w, "shell.exec", 2, JSONObject().put("sh", "x")).getBoolean("ok"))
+        assertEquals(0, env.appClosedCalls)
+    }
+
+    @Test fun capsAndPingCarryFsInfo() {
+        val w = authed()
+        assertEquals("scoped", cmd(w, "sys.caps", 1).getJSONObject("fs").getString("fs_mode"))
+        assertEquals("scoped", cmd(w, "sys.ping", 2).getJSONObject("fs").getString("fs_mode"))
     }
 
     @Test fun lockedRefusesShellAndInputOnly() {

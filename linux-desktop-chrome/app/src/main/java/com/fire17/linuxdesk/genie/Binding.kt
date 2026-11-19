@@ -144,7 +144,8 @@ object Binding {
  * agent recommendation is a setting that is OFF by default:
  *  - genie_window = SG (default: the app is on screen or was within 2 min) | FGS (while the session runs);
  *  - refuse_while_locked: default OFF;
- *  - xor_guard ("All-files access XOR Genie shell"): default OFF, so both may be on together.
+ *  - xor_guard ("All-files access XOR Genie shell"): default OFF, so both may be on together;
+ *  - wide_window_gate: default OFF = only scan/delete requests need the app on screen (as in SG).
  * "Genie access" and "Developer: local link" are spec 01 §4 rule 2 and stay OFF by default.
  */
 object GenieSettings {
@@ -194,6 +195,15 @@ object GenieSettings {
     fun refuseWhileLocked(ctx: Context): Boolean = refuseWhileLocked(prefs(ctx))
     internal fun refuseWhileLocked(p: SharedPreferences) = p.getBoolean("refuse_while_locked", false)
     fun setRefuseWhileLocked(ctx: Context, on: Boolean) = putBool(ctx, "refuse_while_locked", on)
+
+    /**
+     * `wide_window_gate`: when ON, EVERY genie verb needs the app on screen (or within 2 min) under
+     * genie_window=sg. Default OFF = like Storage Genie: only scan and delete requests need it.
+     * The wire Router reads prefs "ld.genie" key "wide_window_gate" directly; keep the key exactly.
+     */
+    fun wideWindowGate(ctx: Context): Boolean = wideWindowGate(prefs(ctx))
+    internal fun wideWindowGate(p: SharedPreferences) = p.getBoolean("wide_window_gate", false)
+    fun setWideWindowGate(ctx: Context, on: Boolean) = putBool(ctx, "wide_window_gate", on)
 
     /** `xor_guard`: when ON, All-files access and Genie access cannot both be on. Default OFF. */
     fun xorGuard(ctx: Context): Boolean = xorGuard(prefs(ctx))

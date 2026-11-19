@@ -34,6 +34,8 @@
     <string name="ld_genie_refuse_locked_help">Off by default. On: your genie cannot run commands or use the mouse and keyboard while the phone is locked.</string>
     <string name="ld_genie_xor_guard">All-files access or Genie access, not both — off by default</string>
     <string name="ld_genie_xor_guard_help">Off by default. On: Genie access cannot be turned on while LinuxDesk has access to all your files, so a command inside LinuxDesk cannot reach your files without your approval.</string>
+    <string name="ld_genie_wide_gate">Require the app on screen for every genie action — off by default</string>
+    <string name="ld_genie_wide_gate_help">Off: like Storage Genie, only scan and delete requests need LinuxDesk on screen (or within the last 2 minutes). On: every genie action needs it.</string>
     <string name="ld_genie_local_link">Developer: local link</string>
     <string name="ld_genie_local_link_help">Off by default. For testing over USB only: a link on 127.0.0.1:8766 (adb forward tcp:8766 tcp:8766). It still needs your pairing.</string>
 

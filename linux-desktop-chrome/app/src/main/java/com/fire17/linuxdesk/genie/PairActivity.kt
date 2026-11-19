@@ -34,6 +34,7 @@ class PairActivity : Activity() {
     private lateinit var windowFgs: Switch
     private lateinit var refuseLocked: Switch
     private lateinit var xorGuard: Switch
+    private lateinit var wideGate: Switch
     private lateinit var localLink: Switch
 
     // Posted, never run inline: a switch's own listener triggers Binding.changed(), and re-binding that
@@ -52,6 +53,7 @@ class PairActivity : Activity() {
         windowFgs = findViewById(R.id.genie_window_fgs)
         refuseLocked = findViewById(R.id.genie_refuse_locked)
         xorGuard = findViewById(R.id.genie_xor_guard)
+        wideGate = findViewById(R.id.genie_wide_gate)
         localLink = findViewById(R.id.genie_local_link)
 
         findViewById<Button>(R.id.genie_share).setOnClickListener { share() }
@@ -113,6 +115,9 @@ class PairActivity : Activity() {
         bindSwitch(xorGuard, GenieSettings.xorGuard(this)) { want ->
             if (GenieSettings.setXorGuard(this, want)) explainGuardTurnedAccessOff()
             true
+        }
+        bindSwitch(wideGate, GenieSettings.wideWindowGate(this)) { want ->
+            GenieSettings.setWideWindowGate(this, want); true
         }
         bindSwitch(localLink, GenieSettings.localLink(this)) { want ->
             GenieSettings.setLocalLink(this, want); true

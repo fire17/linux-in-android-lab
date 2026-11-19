@@ -227,6 +227,7 @@ object GenieRuntime {
         val r = relay ?: return
         val key = newKey()
         val env = mutableListOf("DISPLAY=:0", "LINUXDESK_KEY=$key", "LINUXDESK_PORT=$DESKD_PORT")
+        if (BuildConfig.DEBUG) env += "LINUXDESK_SELFTEST=1"      // device self-test batch (spec 02), debug builds only
         val flags = browserFlags
         if (withBrowser && flags != null) {
             env += "LINUXDESK_BROWSER_CMD=$BROWSER_CMD"
@@ -317,6 +318,10 @@ object GenieRuntime {
         override fun lockedRefusal() = GenieWindow.lockedRefusal(ctx)
         override fun xorBlocks() = GenieSettings.xorBlocksNow(ctx)
         override fun fs(cmd: JSONObject): Reply = FsVerbs.handle(ctx, cmd)
+        override fun fsInfo(): JSONObject = com.fire17.linuxdesk.storage.StoragePrefs.capsInfo(ctx)
+        // Read straight from prefs (pair owns GenieSettings and adds the getter + switch); default OFF.
+        override fun wideWindowGate(): Boolean =
+            ctx.getSharedPreferences("ld.genie", Context.MODE_PRIVATE).getBoolean("wide_window_gate", false)
         override fun version(): String = BuildConfig.VERSION_NAME
 
         override fun sessionInfo(): JSONObject {

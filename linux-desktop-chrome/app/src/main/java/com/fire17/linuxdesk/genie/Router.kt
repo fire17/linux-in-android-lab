@@ -59,6 +59,13 @@ interface RouterEnv {
     fun xorBlocks(): Boolean
     fun fs(cmd: JSONObject): Reply
     fun fsAvailable(): Boolean = true
+    /** Storage state for sys.caps / sys.ping: {fs_mode, all_files_granted, xor_guard, roots} (StoragePrefs.capsInfo). */
+    fun fsInfo(): JSONObject = JSONObject()
+    /**
+     * `wide_window_gate` (prefs ld.genie, default false): when true the genie window gates every acting verb
+     * ([Router.WIDE_GATED]); when false (the default) it gates only Storage Genie's three ([Router.SG_GATED]).
+     */
+    fun wideWindowGate(): Boolean = false
     /** `session` object of sys.ping: rootfs, packages, x11, browser (the Router adds deskd). */
     fun sessionInfo(): JSONObject = JSONObject()
     /** `x` object of sys.ping: w, h, dpi, density. */
@@ -169,10 +176,19 @@ class Router(
         )
 
         /**
-         * Allowed even when the genie window is closed: stopping things, and the read-only proposal/log verbs
-         * (Storage Genie gates only scan / propose_delete / execute; LinuxDesk gates every other acting verb).
+         * The genie window gate (02 §03: Storage Genie's behaviour is the default). By default only SG's three
+         * gated verbs need the app on screen (or within 2 min); the Linux machine stays under the genie's control.
+         */
+        val SG_GATED = setOf("fs.scan", "fs.propose_delete", "fs.execute")
+
+        /**
+         * Used only when the `wide_window_gate` setting is ON (default OFF): every acting verb is gated, except
+         * stopping things and the read-only proposal/log verbs below.
          */
         val UNGATED = setOf("stream.ack", "stream.stop", "shell.kill", "fs.proposal", "fs.cancel", "fs.adjust", "fs.log")
+
+        fun windowGated(verb: String, wide: Boolean): Boolean =
+            if (wide) !verb.startsWith("sys.") && verb !in UNGATED else verb in SG_GATED
 
         /** Verbs that address an existing sid, which must belong to the asking connection. */
         private val SID_VERBS = setOf("shell.write", "shell.kill", "stream.stop", "stream.ack")
@@ -365,7 +381,8 @@ class Router(
         val family = verb.substringBefore('.', "")
         when {
             verb == "sys.ping" -> done(Reply.Json(ping(s)))
-            verb == "sys.caps" -> done(Reply.Json(JSONObject().put("ok", true).put("caps", JSONArray(caps())).put("audio", false)))
+            verb == "sys.caps" -> done(Reply.Json(JSONObject().put("ok", true).put("caps", JSONArray(caps())).put("audio", false)
+                .put("fs", try { env.fsInfo() } catch (_: Exception) { JSONObject() })))
             verb == "sys.audit" -> pool.execute {
                 done(audit?.let { Reply.Json(it.query(cmd.optLong("since", 0L))) } ?: err("unsupported", "no audit log"))
             }
@@ -392,7 +409,8 @@ class Router(
 
     /** The refusals that do not depend on arguments. Null = go ahead. */
     private fun gate(verb: String, family: String): Reply? {
-        if (verb !in UNGATED && !env.windowOpen()) {
+        val wide = try { env.wideWindowGate() } catch (_: Exception) { false }
+        if (windowGated(verb, wide) && !env.windowOpen()) {
             try { env.onAppClosed() } catch (_: Exception) {}
             return err("app_closed", "open LinuxDesk on the phone")
         }
@@ -419,6 +437,7 @@ class Router(
             .put("window_open", env.windowOpen())
             .put("session", session)
             .put("x", try { env.xInfo() } catch (_: Exception) { JSONObject() })
+            .put("fs", try { env.fsInfo() } catch (_: Exception) { JSONObject() })
     }
 
     // ------------------------------------------------------------------------------------------ relay

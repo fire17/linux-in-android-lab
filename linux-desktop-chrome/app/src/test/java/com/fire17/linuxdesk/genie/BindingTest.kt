@@ -172,6 +172,10 @@ class BindingTest {
         assertEquals("window = sg", GenieSettings.Window.SG, GenieSettings.genieWindow(fresh))
         assertFalse("refuse while locked OFF: commands work while locked", GenieSettings.refuseWhileLocked(fresh))
         assertFalse("XOR guard OFF: All-files + shell may both be on", GenieSettings.xorGuard(fresh))
+        assertFalse("wide window gate OFF: only scan/delete need the app on screen", GenieSettings.wideWindowGate(fresh))
+        fresh.map["wide_window_gate"] = true
+        assertTrue("the Router's key is exactly wide_window_gate", GenieSettings.wideWindowGate(fresh))
+        fresh.map.remove("wide_window_gate")
         fresh.map["genie_window"] = "garbage"
         assertEquals("unknown value falls back to sg", GenieSettings.Window.SG, GenieSettings.genieWindow(fresh))
         fresh.map["genie_window"] = "FGS"
