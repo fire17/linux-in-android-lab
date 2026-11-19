@@ -8,4 +8,6 @@
     <string name="ld_hw_copy">Copy</string>
     <string name="ld_hw_copied">Hardware info copied</string>
     <string name="ld_hw_show_json">Show full JSON</string>
+    <string name="ld_hw_cams_title">Phone cameras for Linux</string>
+    <string name="ld_hw_cams_copy">Copy camera list</string>
 </resources>

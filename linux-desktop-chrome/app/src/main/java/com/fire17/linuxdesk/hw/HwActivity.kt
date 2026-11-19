@@ -12,6 +12,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.fire17.linuxdesk.R
+import com.fire17.linuxdesk.camera.CameraDiag
 import org.json.JSONObject
 
 /**
@@ -47,7 +48,35 @@ class HwActivity : Activity() {
             full.visibility = if (full.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(copy); addView(showJson) }
+        // Cameras v3: what "Phone camera for Linux" will expose — every id, facing, focal, physical lenses, max sizes.
+        // Read-only (no openCamera, no CAMERA permission), works with the switch OFF. Copy = send to the team.
+        val camTitle = TextView(this).apply { setText(R.string.ld_hw_cams_title); setPadding(0, pad, 0, 0); setTypeface(typeface, Typeface.BOLD) }
+        val camText = TextView(this).apply {
+            setText(R.string.ld_hw_probing); typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true)
+            setPadding(0, pad / 2, 0, pad / 2)
+        }
+        val camCopy = Button(this).apply { setText(R.string.ld_hw_cams_copy); isEnabled = false }
+        val camPayload = java.util.concurrent.atomic.AtomicReference("")
+        camCopy.setOnClickListener {
+            getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("LinuxDesk cameras", camPayload.get()))
+            Toast.makeText(this, R.string.ld_hw_copied, Toast.LENGTH_SHORT).show()
+        }
         col.addView(intro); col.addView(summary); col.addView(buttons); col.addView(full)
+        col.addView(camTitle); col.addView(camText); col.addView(camCopy)
+        Thread({
+            val (text, payload) = try {
+                val list = CameraDiag.read(applicationContext)
+                val sum = CameraDiag.summary(list)
+                sum to (sum + "\n" + CameraDiag.json(list).toString(2))
+            } catch (t: Throwable) { ("Cameras: " + t.javaClass.simpleName).let { it to it } }
+            camPayload.set(payload)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                camText.text = text
+                camCopy.isEnabled = true
+            }
+        }, "cam-diag").start()
         setContentView(ScrollView(this).apply { addView(col) })
 
         Thread({

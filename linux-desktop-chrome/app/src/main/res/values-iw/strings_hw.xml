@@ -7,4 +7,6 @@
     <string name="ld_hw_copy">העתקה</string>
     <string name="ld_hw_copied">פרטי החומרה הועתקו</string>
     <string name="ld_hw_show_json">הצגת ה־JSON המלא</string>
+    <string name="ld_hw_cams_title">מצלמות הטלפון ללינוקס</string>
+    <string name="ld_hw_cams_copy">העתקת רשימת המצלמות</string>
 </resources>
