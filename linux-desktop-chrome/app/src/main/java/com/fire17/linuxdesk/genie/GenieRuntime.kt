@@ -340,6 +340,9 @@ object GenieRuntime {
         override fun wideWindowGate(): Boolean =
             ctx.getSharedPreferences("ld.genie", Context.MODE_PRIVATE).getBoolean("wide_window_gate", false)
         override fun version(): String = BuildConfig.VERSION_NAME
+        override fun otaStatus(tail: Int): JSONObject = otaStore().statusJson(tail, com.fire17.linuxdesk.ota.OtaSettings(ctx).autoApply)
+        override fun otaCheck(): JSONObject = otaStore().checkJson(com.fire17.linuxdesk.ota.OtaSettings(ctx).baseUrl + "manifest.json")
+        private fun otaStore() = com.fire17.linuxdesk.ota.BundleStore(ctx.filesDir, BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME)
 
         override fun sessionInfo(): JSONObject {
             val root = com.fire17.linuxdesk.linux.Distro.currentRootfs(ctx)   // "rootfs" for Alpine, as before

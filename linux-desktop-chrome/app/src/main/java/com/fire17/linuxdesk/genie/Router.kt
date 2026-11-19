@@ -72,6 +72,10 @@ interface RouterEnv {
     fun sessionInfo(): JSONObject = JSONObject()
     /** `x` object of sys.ping: w, h, dpi, density. */
     fun xInfo(): JSONObject = JSONObject()
+    /** sys.ota.status (read-only): {active, prev, highest, trial, auto_apply, ledger:[tail]}. Default = OTA not wired. */
+    fun otaStatus(tail: Int): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
+    /** sys.ota.check: checks the update URL (signature, anti-downgrade); NEVER downloads the bundle or installs. */
+    fun otaCheck(): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
     fun version(): String
     fun now(): Long = System.currentTimeMillis()
     fun onAppClosed() {}
@@ -406,6 +410,14 @@ class Router(
             }
             // Read-only, like sys.audit: never window-gated (sys.* is outside both gate sets).
             verb == "sys.logs" -> pool.execute { done(SysLogs.answer(cmd, logs, audit)) }
+            // OTA (read-only + check-only; installing is an in-app tap or the in-app auto-apply switch, never a verb).
+            verb == "sys.ota.status" -> pool.execute {
+                done(try { Reply.Json(env.otaStatus(cmd.optInt("n", 20).coerceIn(0, 100))) } catch (t: Throwable) { err("internal", t.javaClass.simpleName) })
+            }
+            verb == "sys.ota.check" -> pool.execute {
+                done(try { Reply.Json(env.otaCheck()) } catch (t: Throwable) { err("internal", t.javaClass.simpleName) })
+            }
+            verb.startsWith("sys.ota.") -> done(err("denied", "OTA installs only from the LinuxDesk app"))
             family == "fs" -> {
                 gate(verb, family)?.let { done(it); return }
                 val paths = cmd.optJSONArray("paths")

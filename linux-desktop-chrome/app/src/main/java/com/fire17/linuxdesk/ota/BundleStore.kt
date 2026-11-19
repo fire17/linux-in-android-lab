@@ -77,6 +77,24 @@ class BundleStore(
         return stage(mBytes, zBytes.inputStream(), channel)
     }
 
+    /** sys.ota.status: state + the newest [tail] ledger rows (rows hold no keys/tokens by construction). */
+    fun statusJson(tail: Int, autoApply: Boolean): JSONObject {
+        val s = state()
+        return JSONObject().put("ok", true).put("app_code", appVersionCode).put("app", appVersionName)
+            .put("active", activeVersion()).put("prev", s.optLong("prev", 0)).put("highest", s.optLong("highest", 0))
+            .put("trial", s.optBoolean("trial")).put("auto_apply", autoApply)
+            .put("ledger", org.json.JSONArray(ledgerRows(tail)))
+    }
+
+    /** sys.ota.check: manifest-only check; never downloads the bundle, never stages or installs. */
+    fun checkJson(manifestUrl: String): JSONObject = when (val r = checkRemote(manifestUrl)) {
+        is BundleVerifier.Result.Ok -> JSONObject().put("ok", true).put("available", true)
+            .put("version", r.manifest.version).put("files", r.manifest.files.size).put("signature", "ok")
+            .put("active", activeVersion())
+        is BundleVerifier.Result.Rejected -> JSONObject().put("ok", true).put("available", false)
+            .put("reason", r.reason).put("active", activeVersion())
+    }
+
     /** "Check": fetches only the manifest and verifies it (signature, anti-downgrade, min_app). Nothing is stored. */
     fun checkRemote(manifestUrl: String): BundleVerifier.Result =
         try {

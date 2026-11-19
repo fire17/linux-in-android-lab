@@ -169,6 +169,7 @@ class SessionService : Service() {
             SessionBus.downloadPercent = -1
             // OTA v1: APK-upgrade clear / dead-trial rollback now (before installHelpers overlays ota/active), then judge the trial in the background.
             com.fire17.linuxdesk.ota.OtaHealth.start(com.fire17.linuxdesk.ota.BundleStore(filesDir, BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME), { SessionBus.browserWindowUp && SessionBus.snapshot.state == State.RUNNING }, { SessionBus.snapshot.state in setOf(State.BROWSER_EXITED, State.ERROR) }, { GenieRuntime.deskdReady() || !GenieSettings.genieAccess(this) }, { stopping })
+            com.fire17.linuxdesk.ota.OtaSettings(this).let { com.fire17.linuxdesk.ota.OtaAutoCheck.maybeRun(com.fire17.linuxdesk.ota.BundleStore(filesDir, BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME), it.autoApply, it.baseUrl) } // OTA: auto-apply switch (default OFF), ≤ 1 check / 6 h, applies next session
 
             focusBridge?.stop()
             focusBridge = if (settings.autoKeyboard) FocusBridge().start() else null

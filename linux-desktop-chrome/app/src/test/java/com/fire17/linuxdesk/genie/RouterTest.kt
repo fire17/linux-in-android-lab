@@ -107,6 +107,11 @@ class RouterTest {
         override fun hwInfo(): JSONObject = JSONObject().put("soc", JSONObject().put("model", "SM8650"))
         override fun fs(cmd: JSONObject): Reply { fsCalls += cmd; return fsReply(cmd) }
         override fun version() = "0.1.0-test"
+        @Volatile var otaChecks = 0
+        @Volatile var otaTail = -1
+        override fun otaStatus(tail: Int): JSONObject { otaTail = tail
+            return JSONObject().put("ok", true).put("active", 3).put("trial", false).put("ledger", JSONArray()) }
+        override fun otaCheck(): JSONObject { otaChecks++; return JSONObject().put("ok", true).put("available", true).put("version", 4) }
         override fun onAppClosed() { appClosedCalls++ }
         override fun log(line: String) { logs += line }
     }
@@ -646,6 +651,42 @@ class RouterTest {
         assertEquals(0, env.appClosedCalls)
         assertFalse(Router.windowGated("sys.logs", wide = true))
         assertFalse(Router.windowGated("sys.logs", wide = false))
+    }
+
+    // ------------------------------------------------------------------ sys.ota
+
+    @Test fun sysOtaStatusIsReadOnlyAndClampsTail() {
+        val w = authed()
+        val r = cmd(w, "sys.ota.status", 1, JSONObject().put("n", 5000))
+        assertTrue(r.toString(), r.getBoolean("ok"))
+        assertEquals(3, r.getInt("active"))
+        assertEquals(100, env.otaTail)
+        assertEquals(0, env.otaChecks)
+        assertTrue(relay.calls.isEmpty())
+    }
+
+    @Test fun sysOtaCheckOnlyChecks() {
+        val w = authed()
+        val r = cmd(w, "sys.ota.check", 1)
+        assertTrue(r.getBoolean("available"))
+        assertEquals(1, env.otaChecks)
+        assertTrue(relay.calls.isEmpty())
+    }
+
+    @Test fun sysOtaInstallVerbsAreDenied() {
+        val w = authed()
+        for ((i, v) in listOf("sys.ota.install", "sys.ota.apply", "sys.ota.commit", "sys.ota.rollback").withIndex()) {
+            assertEquals(v, "denied", cmd(w, v, i + 1).getString("error"))
+        }
+        assertEquals(0, env.otaChecks)
+    }
+
+    @Test fun sysOtaIsUngatedWithWindowClosed() {
+        val w = authed()
+        env.window = false; env.wide = true
+        assertTrue(cmd(w, "sys.ota.status", 1).getBoolean("ok"))
+        assertEquals(0, env.appClosedCalls)
+        assertFalse(Router.windowGated("sys.ota.check", wide = true))
     }
 
     @Test fun sysLogsCutsOldestLinesFirstUnderBudget() {

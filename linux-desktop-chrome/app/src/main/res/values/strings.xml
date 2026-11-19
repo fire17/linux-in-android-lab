@@ -9,7 +9,7 @@
     <string name="ld_mic_stop">Stop microphone</string>
     <string name="ld_mic_denied">Microphone permission was not granted, so the microphone stays off.</string>
     <string name="ld_camera_switch">Phone camera for Linux</string>
-    <string name="ld_camera_help">Off by default. When on, web pages in Linux Chromium can pick \"Phone camera\" (this phone\'s back camera). The camera only turns on while a page uses it. Only this switch can turn it on; the genie cannot. Turns off when the session ends.</string>
+    <string name="ld_camera_help">Off by default. When on, web pages in Linux Chromium can pick any of this phone\'s cameras (listed as \"Phone back/front … mm\"). A camera only turns on while a page uses it; turning this off cuts every page off at once. Only this switch can turn it on; the genie cannot. Turns off when the session ends.</string>
     <string name="ld_camera_on_text">Phone camera available to Linux</string>
     <string name="ld_camera_stop">Stop camera</string>
     <string name="ld_camera_denied">Camera permission was not granted, so the phone camera stays off.</string>
