@@ -147,6 +147,8 @@ class Router(
     private val audit: Audit?,
     private val pool: ExecutorService = Executors.newCachedThreadPool(daemon("genie-verb")),
     private val timer: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(daemon("genie-timer")),
+    /** The session log `sys.logs` reads (SessionBus writes the process-wide one). */
+    private val logs: LogRing? = SessionLog.ring,
 ) {
     companion object {
         const val PROTO = "linuxdesk/1"
@@ -386,6 +388,8 @@ class Router(
             verb == "sys.audit" -> pool.execute {
                 done(audit?.let { Reply.Json(it.query(cmd.optLong("since", 0L))) } ?: err("unsupported", "no audit log"))
             }
+            // Read-only, like sys.audit: never window-gated (sys.* is outside both gate sets).
+            verb == "sys.logs" -> pool.execute { done(SysLogs.answer(cmd, logs, audit)) }
             family == "fs" -> {
                 gate(verb, family)?.let { done(it); return }
                 val paths = cmd.optJSONArray("paths")

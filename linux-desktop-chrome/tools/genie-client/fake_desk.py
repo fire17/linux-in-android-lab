@@ -53,6 +53,10 @@ class FakeDesk(object):
         self.threads = []
         self.stopping = False
         self.log = []                       # what a real app would log: verb + outcome, never args
+        self.session_lines = []             # the app's SessionBus ring, for sys.logs
+        self.session_first = 0              # seq of session_lines[0] (older lines fell out)
+        self.session_cap = 5000
+        self.epoch = int(time.time() * 1000)
 
     # --- lifecycle ---
     def start(self):
@@ -202,6 +206,36 @@ class FakeDesk(object):
 
     def v_sys_audit(self, m, ctx):
         return {"ok": True, "rows": list(self.audit)}
+
+    def add_session_line(self, line):
+        self.session_lines.append(line)
+        while len(self.session_lines) > self.session_cap:
+            self.session_lines.pop(0)
+            self.session_first += 1
+
+    def v_sys_logs(self, m, ctx):                   # mirrors SysLogs.answer (LogRing.kt)
+        mode = m.get("mode") or "tail"
+        if mode not in ("tail", "all", "delta"):
+            return {"error": "bad_args", "detail": "mode must be tail, all or delta"}
+        n = max(1, min(int(m.get("n", 200)), 5000))
+        first, held = self.session_first, list(self.session_lines)
+        cursor = first + len(held)
+        dropped, reset = 0, False
+        if mode == "all":
+            frm = first
+        elif mode == "tail":
+            frm = max(first, cursor - n)
+        else:
+            since = int(m.get("since", 0))
+            if ("epoch" in m and m["epoch"] != self.epoch) or since > cursor or since < 0:
+                frm, reset = first, True
+            elif since < first:
+                frm, dropped = first, first - since
+            else:
+                frm = since
+        return {"ok": True, "mode": mode, "lines": held[frm - first:], "first": frm, "cursor": cursor,
+                "epoch": self.epoch, "dropped": dropped, "truncated": 0, "reset": reset, "audit": [],
+                "audit_since": m.get("audit_since", 0)}
 
     def v_sys_sleep(self, m, ctx):                  # test helper: a slow verb, for out-of-order replies
         time.sleep(float(m.get("s", 0.5)))

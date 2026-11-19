@@ -245,6 +245,34 @@ class VerbTest(Base):
         self.assertEqual((code, json.loads(out)["state"]), (0, "cancelled"))
         self.assertEqual(self.cli("proposal", "P9")[0], 1)    # unknown proposal -> error
 
+    def test_cli_logs_tail_all_and_new_cursor(self):
+        self.paired().close()
+        for i in range(5):
+            self.fd.add_session_line("line %d" % i)
+        code, out, _ = self.cli("logs", "--tail", "2")
+        self.assertEqual((code, out), (0, "line 3\nline 4\n"))
+        self.assertEqual(self.cli("logs")[1].count("\n"), 5)
+        self.assertEqual(self.cli("logs", "--all")[1].count("\n"), 5)
+        code, out, _ = self.cli("logs", "--new")
+        self.assertEqual((code, out.count("\n")), (0, 5))              # first --new: everything held
+        path = os.path.join(lc.STORE_DIR, "local.logcursor.json")
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        self.assertEqual(json.load(open(path))["cursor"], 5)
+        tok = json.load(open(os.path.join(lc.STORE_DIR, "local.json")))["token"]
+        self.assertNotIn(tok, open(path).read())                          # the cursor file holds no secret
+        self.assertEqual(self.cli("logs", "--new")[1], "")                # nothing new
+        self.fd.add_session_line("line 5")
+        self.assertEqual(self.cli("logs", "--new")[1], "line 5\n")       # only the delta
+        self.fd.session_cap = 3
+        for i in range(6, 12):
+            self.fd.add_session_line("line %d" % i)
+        code, out, err = self.cli("logs", "--new")
+        self.assertEqual(out, "line 9\nline 10\nline 11\n")
+        self.assertIn("3 lines were lost", err)                           # seqs 6..8 fell out of the ring
+        with self.assertRaises(SystemExit) as e:                          # mutually exclusive (argparse)
+            self.cli("logs", "--all", "--new")
+        self.assertEqual(e.exception.code, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

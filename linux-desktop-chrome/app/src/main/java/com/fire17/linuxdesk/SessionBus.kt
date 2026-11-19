@@ -3,6 +3,7 @@ package com.fire17.linuxdesk
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.fire17.linuxdesk.genie.SessionLog
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -33,10 +34,16 @@ object SessionBus {
         fun onKeyboardRequest(show: Boolean) {}
     }
 
+    /** Lines shown in the launcher / shared by LogShare. The ring itself keeps more, for `sys.logs`. */
     private const val MAX_LINES = 600
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArrayList<Listener>()
-    private val lines = ArrayDeque<String>()
+
+    /**
+     * Bounded, with a monotonically increasing line counter (genie `sys.logs` cursors survive old lines
+     * dropping out). Lines logged here must never contain the pairing token, the session key or iroh secrets.
+     */
+    private val lines = SessionLog.ring
 
     @Volatile var snapshot = Snapshot(State.IDLE, "")
         private set
@@ -64,16 +71,13 @@ object SessionBus {
     fun log(line: String) {
         // Mirrored to logcat, so adb and the CI emulator job can follow a session.
         Log.i("LinuxDeskSession", line)
-        synchronized(lines) {
-            lines.addLast(line)
-            while (lines.size > MAX_LINES) lines.removeFirst()
-        }
+        lines.add(line)
         main.post { listeners.forEach { it.onLog(line) } }
     }
 
-    fun logText(): String = synchronized(lines) { lines.joinToString("\n") }
+    fun logText(): String = lines.lastLines(MAX_LINES).joinToString("\n")
 
-    fun lastLogLine(): String = synchronized(lines) { lines.lastOrNull().orEmpty() }
+    fun lastLogLine(): String = lines.lastLines(1).lastOrNull().orEmpty()
 
     fun requestKeyboard(show: Boolean) {
         main.post { listeners.forEach { it.onKeyboardRequest(show) } }

@@ -558,4 +558,73 @@ class RouterTest {
         Audit(f).record(1, "shell.exec\n{\"x\":1}", true, null, 1, "tcp")
         assertEquals("?", JSONObject(f.readLines().single()).getString("cmd"))
     }
+    // ------------------------------------------------------------------ sys.logs
+
+    private fun logsRouter(ring: LogRing): Router {
+        router.shutdown()
+        router = Router(env, relay, Audit(auditFile), logs = ring)
+        return router
+    }
+
+    private fun strings(a: JSONArray) = (0 until a.length()).map { a.getString(it) }
+
+    @Test fun sysLogsTailDeltaAndCursorSurvivesDroppedLines() {
+        val ring = LogRing(capacity = 10)
+        logsRouter(ring)
+        repeat(5) { ring.add("line $it") }
+        val w = authed()
+
+        val t = cmd(w, "sys.logs", 1, JSONObject().put("n", 3))
+        assertTrue(t.toString(), t.getBoolean("ok"))
+        assertEquals(listOf("line 2", "line 3", "line 4"), strings(t.getJSONArray("lines")))
+        assertEquals(5, t.getInt("cursor"))
+        assertEquals(0, t.getInt("dropped"))
+        assertEquals(5, strings(cmd(w, "sys.logs", 2).getJSONArray("lines")).size)   // default tail 200
+
+        ring.add("line 5"); ring.add("line 6")
+        val d = cmd(w, "sys.logs", 3, JSONObject().put("mode", "delta").put("since", 5).put("epoch", t.getLong("epoch")))
+        assertEquals(listOf("line 5", "line 6"), strings(d.getJSONArray("lines")))
+        assertEquals(7, d.getInt("cursor"))
+        assertEquals(0, strings(cmd(w, "sys.logs", 4, JSONObject().put("mode", "delta").put("since", 7))
+            .getJSONArray("lines")).size)                                              // nothing new
+
+        repeat(20) { ring.add("more $it") }                                            // buffer holds 10
+        val lost = cmd(w, "sys.logs", 5, JSONObject().put("mode", "delta").put("since", 7))
+        assertEquals(27, lost.getInt("cursor"))
+        assertEquals(10, lost.getInt("dropped"))                                       // seqs 7..16 fell out
+        assertEquals("more 10", strings(lost.getJSONArray("lines")).first())
+
+        val all = cmd(w, "sys.logs", 6, JSONObject().put("mode", "all"))
+        assertEquals(10, all.getJSONArray("lines").length())
+        val other = cmd(w, "sys.logs", 7, JSONObject().put("mode", "delta").put("since", 3).put("epoch", 1))
+        assertTrue(other.getBoolean("reset"))                                          // cursor from an older process
+        assertEquals("bad_args", cmd(w, "sys.logs", 8, JSONObject().put("mode", "follow")).getString("error"))
+        assertTrue(cmd(w, "sys.logs", 9).getJSONArray("audit").length() > 0)          // audit rows ride along
+    }
+
+    @Test fun sysLogsIsUngatedEvenWithWideGateAndWindowClosed() {
+        val ring = LogRing()
+        logsRouter(ring)
+        ring.add("hello")
+        val w = authed()
+        env.window = false
+        env.wide = true
+        val r = cmd(w, "sys.logs", 1)
+        assertTrue(r.toString(), r.getBoolean("ok"))
+        assertEquals(listOf("hello"), strings(r.getJSONArray("lines")))
+        assertEquals(0, env.appClosedCalls)
+        assertFalse(Router.windowGated("sys.logs", wide = true))
+        assertFalse(Router.windowGated("sys.logs", wide = false))
+    }
+
+    @Test fun sysLogsCutsOldestLinesFirstUnderBudget() {
+        val ring = LogRing()
+        repeat(100) { ring.add("x".repeat(90) + it) }
+        val r = (SysLogs.answer(JSONObject().put("mode", "all"), ring, null, budget = 2000) as Reply.Json).obj
+        val lines = strings(r.getJSONArray("lines"))
+        assertTrue(lines.size in 1..20)
+        assertEquals("x".repeat(90) + 99, lines.last())                               // newest kept
+        assertEquals(100 - lines.size, r.getInt("truncated"))
+        assertEquals(100, r.getInt("cursor"))
+    }
 }

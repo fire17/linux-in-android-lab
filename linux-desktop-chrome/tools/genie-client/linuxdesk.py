@@ -13,6 +13,7 @@
   linuxdesk watch --fps 2 [--out-dir frames/] [--frames 10]
   linuxdesk ls [PATH] · get PATH [DEST] · put SRC DST · propose-delete PATH... --reason "..."
   linuxdesk proposal ID · execute ID [--mode trash|delete] [--wait S] · cancel ID   (args travel as `proposal`)
+  linuxdesk logs [--all | --tail N | --new]     (phone session log on demand; --new = only lines not yet read)
   linuxdesk raw VERB '{"json": "args"}'
 
 Transport: --tcp HOST:PORT (default 127.0.0.1:8766 = the app's WireServer via `adb forward tcp:8766 tcp:8766`)
@@ -29,6 +30,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import linuxdesk_client  # noqa: E402
 from linuxdesk_client import Conn, LinkError, RemoteError, Reply  # noqa: E402
 
 CHUNK = 512 << 10
@@ -62,6 +64,32 @@ def print_tree(r, out):
             "  " * min(int(n.get("depth", 0)) // 3, 6) if r.get("mode") == "ax" else "",
             n["ref"], n.get("role", ""), n.get("name", ""), val, (" [" + flags + "]") if flags else "",
             (" @%d,%d %dx%d" % tuple(box)) if box else ""))
+
+
+def _cursor_path(ident):
+    """~/.config/linuxdesk/<ident>.logcursor.json, next to the token file (same 0700 dir)."""
+    safe = "".join(ch for ch in ident if ch.isalnum() or ch in "-_.") or "local"
+    return os.path.join(linuxdesk_client.STORE_DIR, safe + ".logcursor.json")
+
+
+def load_log_cursor(ident):
+    try:
+        with open(_cursor_path(ident)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_log_cursor(ident, cur):
+    path = _cursor_path(ident)
+    linuxdesk_client._refuse_repo_path(path)
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(cur, f)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
 
 
 def build_parser():
@@ -159,6 +187,13 @@ def build_parser():
     p.add_argument("--wait", type=float, default=0, metavar="S", help="poll fs.proposal up to S seconds for the outcome")
     p = sp.add_parser("cancel", help="cancel a delete proposal")
     p.add_argument("proposal_id")
+
+    p = sp.add_parser("logs", help="pull the phone's session log: tail (default 200), --all, or --new since last time")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--all", action="store_true", help="every line the phone still holds")
+    g.add_argument("--tail", type=int, metavar="N", help="the last N lines (max 5000)")
+    g.add_argument("--new", action="store_true", help="only lines not read since the last --new (cursor kept per node)")
+    p.add_argument("--audit", action="store_true", help="also print the genie audit rows (verb/ok/ms only)")
 
     p = sp.add_parser("raw", help="send any verb with JSON args")
     p.add_argument("verb")
@@ -337,6 +372,37 @@ def run(o, c):
         if not o.json:
             print("state: %s%s" % (r.get("state"), (" (%s)" % r["result"]) if r.get("result") else ""))
             return 0
+    elif cmd == "logs":
+        ident = c.ident
+        if o.new:
+            cur = load_log_cursor(ident)
+            a = {"mode": "delta", "since": int(cur.get("cursor", 0))}
+            for k in ("epoch", "audit_since"):
+                if k in cur:
+                    a[k] = cur[k]
+        elif o.all:
+            a = {"mode": "all"}
+        else:
+            a = {"mode": "tail", "n": o.tail or 200}
+        r = c.cmd("sys.logs", **a)
+        if o.new:
+            save_log_cursor(ident, {"cursor": r.get("cursor", 0), "epoch": r.get("epoch"),
+                                    "audit_since": r.get("audit_since", 0), "saved_at": int(time.time())})
+        if o.json:
+            out_json(r)
+            return 0
+        if r.get("reset"):
+            sys.stderr.write("[linuxdesk] the app restarted since the saved cursor; showing everything held\n")
+        if r.get("dropped"):
+            sys.stderr.write("[linuxdesk] %d lines were lost before this read (buffer rolled over)\n" % r["dropped"])
+        if r.get("truncated"):
+            sys.stderr.write("[linuxdesk] %d oldest lines cut to fit one reply\n" % r["truncated"])
+        for line in r.get("lines", []):
+            print(line)
+        if o.audit:
+            for row in r.get("audit", []):
+                print("audit %s" % json.dumps(row, ensure_ascii=False))
+        return 0
     elif cmd == "raw":
         try:
             a = json.loads(o.args)
