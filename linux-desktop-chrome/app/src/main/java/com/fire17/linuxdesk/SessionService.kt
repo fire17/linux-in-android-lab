@@ -274,7 +274,7 @@ class SessionService : Service() {
             screenWidthPx = if (SessionBus.viewWidth > 0) SessionBus.viewWidth else dm.widthPixels,
             screenHeightPx = if (SessionBus.viewHeight > 0) SessionBus.viewHeight else dm.heightPixels,
             extensionDir = if (focusBridge != null) "/opt/linuxdesk/focus-bridge" else null,
-            extraExtensionDirs = if (PhoneCamera.running) listOf(PhoneCamera.EXTENSION_DIR) else emptyList(),
+            extraExtensionDirs = PhoneCamera.extensionDirsForLaunch(),
             useGpu = GpuSession.active,          // GPU v2: true only if the setting is ON and the device/driver are ready
             gpuFallback = GpuSession.fallback,
             acceptLanguages = langs,
@@ -388,19 +388,23 @@ class SessionService : Service() {
 
     // ------------------------------------------------------------------------------------------ phone camera
 
-    /** Switch turned ON mid-session: start the server, write config.js, restart Chromium to load the extension. */
+    /** Switch turned ON mid-session: start the server, write config.js/state.json; restart Chromium only if it was
+     *  launched without the extension. */
     private fun cameraOn(restart: Boolean) {
         if (!PhoneCamera.consent || stopping) return
         val wasRunning = PhoneCamera.running
-        if (PhoneCamera.start(this) == null) { SessionBus.log("camera: not started (permission missing or no back camera)"); return }
+        if (PhoneCamera.start(this) == null) { SessionBus.log("camera: not started (permission missing or no camera)"); return }
         PhoneCamera.writeConfig(sessionDistro.rootfsDir(this))
         SessionBus.log("camera: phone camera available to Linux")
         try { goForeground() } catch (t: Throwable) { SessionBus.log("camera: foreground type not granted (${t.javaClass.simpleName})") }
         updateNotification()
-        if (restart && !wasRunning && SessionBus.snapshot.state in setOf(State.RUNNING, State.BROWSER_EXITED)) restartBrowser()
+        // v2: once Chromium has the extension, ON/OFF is live via state.json; restart only if it was launched without it.
+        if (restart && !wasRunning && !PhoneCamera.extensionLoaded &&
+            SessionBus.snapshot.state in setOf(State.RUNNING, State.BROWSER_EXITED)) restartBrowser()
     }
 
-    /** OFF: the server stops at once (camera closed, port gone). The extension then has nothing to read. */
+    /** OFF: the server stops at once (cameras closed, port gone) and state.json says enabled:false, so pages get
+     *  NotAllowedError. No Chromium restart. */
     private fun cameraOff() {
         PhoneCamera.stop()
         try { PhoneCamera.writeConfig(sessionDistro.rootfsDir(this)) } catch (_: Throwable) {}
@@ -409,7 +413,7 @@ class SessionService : Service() {
 
     /** Session ending: consent does not outlive the session. */
     private fun endCamera() {
-        PhoneCamera.setConsent(false)
+        PhoneCamera.endSession()
         SessionBus.notifyMicChanged()
     }
 
