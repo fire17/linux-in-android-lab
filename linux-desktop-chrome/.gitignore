@@ -26,3 +26,7 @@ genie-client/**/*.json
 # Python bytecode from the shell lane's Mac test runs (would otherwise ship inside assets/linuxdesk/deskd).
 __pycache__/
 *.pyc
+
+# Signing keys. The fixed debug key lives only in the repo secret LINUXDESK_DEBUG_KEYSTORE_B64. Never commit.
+*.keystore
+*.jks

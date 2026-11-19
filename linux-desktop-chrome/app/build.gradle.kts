@@ -21,8 +21,9 @@ android {
         //  - proot's loader (also in nativeLibraryDir) mmaps the guest ELFs instead of exec'ing them;
         //  - the X server is libXlorie.so, loaded into our own :x11 process (xkbcomp is compiled in).
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI passes its run number, so every build is a higher version than the last and installs as an update.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(100) ?: 1
+        versionName = "0.2.3"
 
         ndk {
             // arm64-v8a = real phones. x86_64 = the CI emulator smoke test.
@@ -30,7 +31,26 @@ android {
         }
     }
 
+    // One fixed debug key, so each new APK installs OVER the previous one (Tami, voice AC7D55D3: a fresh CI
+    // runner made a new key every build, and Android refuses an update signed with a different key).
+    // CI writes the key from the repo secret LINUXDESK_DEBUG_KEYSTORE_B64 to LINUXDESK_DEBUG_KEYSTORE; the key is
+    // never committed. Without that file the build falls back to the default debug key, as before.
+    val fixedDebugKeystore = System.getenv("LINUXDESK_DEBUG_KEYSTORE")?.let { file(it) }?.takeIf { it.isFile }
+    signingConfigs {
+        if (fixedDebugKeystore != null) {
+            create("fixedDebug") {
+                storeFile = fixedDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (fixedDebugKeystore != null) signingConfig = signingConfigs.getByName("fixedDebug")
+        }
         release {
             isMinifyEnabled = false
         }
