@@ -41,7 +41,10 @@ TOKYO_NIGHT = {
 
 FONT = "JetBrainsMono Nerd Font"
 # Bumped when the generated i3 config changes; start-omarchy.sh re-renders an older config at the next start.
-I3_REV = "linuxdesk-i3-rev 2"
+# rev 3: no ',' in binding commands (i3 splits commands on ',' and ';', so "-modi drun,run" made Super+Space
+# fail with "Expected one of these tokens" + the red nagbar) and comments on their own line (i3 has no
+# end-of-line comments: "# ..." after a bindsym command is parsed as part of it).
+I3_REV = "linuxdesk-i3-rev 3"
 
 
 def load(name):
@@ -89,8 +92,8 @@ BINDINGS = [
     ("$mod+Shift+Return", "exec sh /opt/linuxdesk/omarchy/browser.sh", "SUPER+SHIFT+RETURN Browser"),
     ("$mod+Shift+b", "exec sh /opt/linuxdesk/omarchy/browser.sh", "SUPER+SHIFT+B Browser"),
     ("$mod+Shift+n", "exec sh /opt/linuxdesk/omarchy/terminal.sh nvim", "SUPER+SHIFT+N Editor"),
-    ("$mod+space", "exec --no-startup-id rofi -show drun -modi drun,run", "SUPER+SPACE Omarchy menu (rofi here)"),
-    ("$mod+Mod1+space", "exec --no-startup-id rofi -show drun -modi drun,run", "SUPER+ALT+SPACE Apps"),
+    ("$mod+space", "exec --no-startup-id rofi -show drun", "SUPER+SPACE Omarchy menu (rofi here)"),
+    ("$mod+Mod1+space", "exec --no-startup-id rofi -show drun", "SUPER+ALT+SPACE Apps"),
     ("$mod+d", "exec --no-startup-id rofi -show run", "i3 default: run any command"),
     ("$mod+Ctrl+Shift+space", "exec --no-startup-id sh /opt/linuxdesk/omarchy/theme-menu.sh", "SUPER+CTRL+SHIFT+SPACE Theme menu"),
     ("$mod+Escape", "exec i3-nagbar -t warning -m 'Leave the i3 session?' -B 'Restart i3' 'i3-msg restart'",
@@ -144,7 +147,9 @@ def i3_config(c, name):
         "# Keybinds translated from Omarchy 4.5 (Hyprland → i3)",
     ]
     for key, cmd, src in BINDINGS:
-        lines.append(f"bindsym {key} {cmd}    # {src}")
+        assert "," not in cmd and ";" not in cmd, cmd  # i3 command separators
+        lines.append(f"# {src}")
+        lines.append(f"bindsym {key} {cmd}")
     for i in range(1, 11):
         k = str(i % 10)
         lines.append(f"bindsym $mod+{k} workspace number {i}")

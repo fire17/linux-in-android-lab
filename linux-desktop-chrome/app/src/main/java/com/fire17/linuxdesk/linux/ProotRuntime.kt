@@ -51,6 +51,21 @@ class ProotRuntime(
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     )
 
+    /**
+     * The phone's time zone for the guest (the rootfs has no /etc/localtime, so the clock showed UTC).
+     * The IANA name when the guest has its zoneinfo file (Arch: tzdata); otherwise (Alpine without tzdata) a fixed
+     * POSIX offset like "<+02>-2" (POSIX inverts the sign), which is right until the next DST change.
+     */
+    private fun guestTz(): String {
+        val tz = java.util.TimeZone.getDefault()
+        if (File(rootfsDir, "usr/share/zoneinfo/${tz.id}").isFile) return "TZ=${tz.id}"
+        val min = tz.getOffset(System.currentTimeMillis()) / 60_000
+        val a = Math.abs(min)
+        val name = "%s%02d%s".format(if (min < 0) "-" else "+", a / 60, if (a % 60 != 0) "%02d".format(a % 60) else "")
+        val posix = "%s%d%s".format(if (min > 0) "-" else "", a / 60, if (a % 60 != 0) ":%02d".format(a % 60) else "")
+        return "TZ=<$name>$posix"
+    }
+
     /** Host-side environment for the proot process itself. */
     fun hostEnv(): Map<String, String> {
         val env = linkedMapOf(
@@ -94,7 +109,7 @@ class ProotRuntime(
             "-b", l2sDir.absolutePath,
             "-w", "/root",
         )
-        cmd += listOf("/usr/bin/env", "-i") + baseGuestEnv + extraGuestEnv + guestArgv
+        cmd += listOf("/usr/bin/env", "-i") + baseGuestEnv + guestTz() + extraGuestEnv + guestArgv
         return cmd
     }
 
