@@ -90,6 +90,18 @@
             android:launchMode="singleTop"
             android:label="Storage" />
 
+        <!-- Share logs (LogShare.kt): serves only cache/logs/ (res/xml/log_paths.xml), read access granted per
+             share. Not exported. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.logs"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/log_paths" />
+        </provider>
+
         <!-- The embedded X server (libXlorie) runs in its own process, as DroidDesk does. Its native threads
              cannot be stopped cleanly, so the process is killed when the session ends. -->
         <service

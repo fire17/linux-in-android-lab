@@ -31,6 +31,8 @@
     <string name="ld_log">יומן</string>
     <string name="ld_copy_log">העתקת היומן</string>
     <string name="ld_copied">היומן הועתק</string>
+    <string name="ld_share_logs">שיתוף היומנים</string>
+    <string name="ld_share_logs_failed">לא הצלחתי ליצור את קובץ היומנים</string>
 
     <string name="ld_state_rootfs">מכין את הלינוקס (Alpine) …</string>
     <string name="ld_state_packages">הפעלה ראשונה: מוריד את Chromium ופונטים (בערך 150 עד 250MB). זה לוקח כמה דקות …</string>

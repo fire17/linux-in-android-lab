@@ -87,6 +87,8 @@ dependencies {
     // androidx.preference.PreferenceDataStore.
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.preference:preference:1.2.1")
+    // FileProvider for "Share logs" (LogShare.kt). appcompat already pulls it in; declared because our code uses it.
+    implementation("androidx.core:core:1.16.0")
 
     // The genie link, phase B (spec 01 §2): iroh endpoint with ALPN "linuxdesk/1". The same artifact Storage
     // Genie ships; the genie side uses pip iroh==1.1.0. Brings JNA + kotlinx-coroutines at runtime scope.

@@ -130,6 +130,9 @@ class LauncherActivity : Activity(), SessionBus.Listener {
                 Toast.makeText(this, R.string.ld_dev_options_missing, Toast.LENGTH_LONG).show()
             }
         }
+        findViewById<Button>(R.id.btn_share_logs).setOnClickListener {
+            if (!LogShare.share(this)) Toast.makeText(this, R.string.ld_share_logs_failed, Toast.LENGTH_LONG).show()
+        }
         findViewById<Button>(R.id.btn_copy_log).setOnClickListener {
             val cm = getSystemService(ClipboardManager::class.java)
             cm.setPrimaryClip(ClipData.newPlainText("LinuxDesk log", SessionBus.logText()))

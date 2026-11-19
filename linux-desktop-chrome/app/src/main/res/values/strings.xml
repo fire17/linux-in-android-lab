@@ -32,6 +32,8 @@
     <string name="ld_log">Log</string>
     <string name="ld_copy_log">Copy log</string>
     <string name="ld_copied">Log copied</string>
+    <string name="ld_share_logs">Share logs</string>
+    <string name="ld_share_logs_failed">Could not make the log zip</string>
     <string name="ld_state_fmt">%1$s\n%2$s</string>
 
     <string name="ld_state_rootfs">Preparing Linux (Alpine) …</string>
