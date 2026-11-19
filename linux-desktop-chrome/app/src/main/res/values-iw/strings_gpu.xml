@@ -5,4 +5,7 @@
     <string name="ld_gpu_unsupported">‏האצת GPU: עדיין לא נתמכת במעבד הגרפי הזה (צריך Adreno, ‏/dev/kgsl-3d0)</string>
     <string name="ld_gpu_blocked">‏האצת GPU: הטלפון הזה לא מאפשר לאפליקציות לפתוח את התקן ה־GPU (‏/dev/kgsl-3d0)</string>
     <string name="ld_gpu_abi">‏האצת GPU: דורש טלפון ARM של 64 ביט</string>
+    <string name="ld_gpu_retry">‏לנסות שוב GPU</string>
+    <string name="ld_gpu_pinned">‏תהליך ה־GPU של Chromium קרס בהפעלה קודמת, ולכן LinuxDesk משתמש ברינדור תוכנה. הקישו \"לנסות שוב GPU\" כדי לנסות את ה־GPU בהפעלה הבאה.</string>
+    <string name="ld_gpu_retry_done">‏ה־GPU ינוסה שוב בהפעלה הבאה</string>
 </resources>

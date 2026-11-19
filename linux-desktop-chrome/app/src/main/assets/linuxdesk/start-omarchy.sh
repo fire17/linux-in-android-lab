@@ -88,15 +88,19 @@ if [ "$LOOK" = 1 ] || [ "$APPS" = 1 ]; then
   ) &
 fi
 
-# Drop flags that fight a window manager.
-n=$#
+# Drop flags that fight a window manager. GPU guard: without GPU mode's --use-gl= (ChromiumFlags.GPU_FLAGS) the
+# browser always gets --disable-gpu, whatever Mesa the guest has (setup-gpu.sh's kgsl Mesa must never be tried
+# with GPU mode OFF). SwiftShader stays available: no --disable-software-rasterizer.
+n=$#; GL=0
 while [ "$n" -gt 0 ]; do
   a=$1; shift; n=$((n - 1))
   case "$a" in
     --window-position=*|--window-size=*|--start-maximized) ;;
+    --use-gl=*|--disable-gpu) GL=1; set -- "$@" "$a" ;;
     *) set -- "$@" "$a" ;;
   esac
 done
+[ "$GL" = 1 ] || { set -- --disable-gpu "$@"; echo "[omarchy] GPU mode off: added --disable-gpu"; }
 
 I3=""
 if command -v i3 >/dev/null 2>&1 && ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then

@@ -13,8 +13,9 @@ import java.io.File
  *   prepare(proot, wanted)   before the browser: support check → setup-gpu.sh once (marker etc/linuxdesk/gpu-v1)
  *   selfCheck(proot)         after the X server is up: gpu-check.sh → one "gpu: renderer=… hardware=…" log line
  *                            (that is what sys.logs shows). No hardware renderer → software for this session.
- * and per browser line: onBrowserLine(line). A GPU-process crash pins software for the rest of the session
- * and asks for one automatic browser restart (restartWanted()).
+ * and per browser line: onBrowserLine(line). A GPU-process crash pins software for the rest of the session,
+ * asks for one automatic browser restart (restartWanted()) and, via onCrashPinned, persists the pin
+ * (LinuxDeskSettings.gpuCrashed) so later Starts stay on software until "Retry GPU".
  *
  * With the setting OFF, prepare() returns at once and every getter is "off": the browser starts exactly as
  * before (--disable-gpu, no extra env).
@@ -38,10 +39,28 @@ object GpuSession {
 
     fun support(): GpuMode.Support = GpuMode.probe(primaryAbi())
 
-    /** Resets the state for a new session, then installs the GPU Mesa if needed. Never throws. */
-    fun prepare(proot: ProotRuntime, wanted: Boolean): Boolean {
+    /**
+     * Called once per GPU-process crash with GPU mode ON (from the browser-log thread). SessionService sets it to
+     * persist LinuxDeskSettings.gpuCrashed, so the next Start does not try the GPU again.
+     */
+    @Volatile var onCrashPinned: (() -> Unit)? = null
+
+    /**
+     * Resets the state for a new session, then installs the GPU Mesa if needed. Never throws. [wanted] is the
+     * user's setting (default OFF); [crashPinned] is LinuxDeskSettings.gpuCrashed. With the setting OFF nothing GPU
+     * runs, even when an earlier session installed the kgsl Mesa (marker etc/linuxdesk/gpu-v1).
+     */
+    fun prepare(proot: ProotRuntime, wanted: Boolean, crashPinned: Boolean = false): Boolean {
         active = false; fallback = false; crashes = 0; restartPending = false; lastRenderer = null
-        if (!wanted) return false
+        when (GpuMode.startDecision(wanted, crashPinned)) {
+            GpuMode.Start.OFF -> return false
+            GpuMode.Start.PINNED_SOFTWARE -> {
+                log("GPU acceleration is ON, but Chromium's GPU process crashed in an earlier session; using software " +
+                    "rendering (tap \"Retry GPU\" in the launcher to try the GPU again)")
+                return false
+            }
+            GpuMode.Start.TRY_GPU -> {}
+        }
         return try {
             val s = support()
             if (s != GpuMode.Support.SUPPORTED) {
@@ -103,6 +122,8 @@ object GpuSession {
         fallback = true
         restartPending = true
         log("Chromium's GPU process crashed ($crashes); falling back to software rendering (the browser restarts once)")
+        try { onCrashPinned?.invoke() } catch (_: Throwable) {}
+        log("software rendering is pinned for the next Starts too; \"Retry GPU\" in the launcher tries the GPU again")
         return true
     }
 

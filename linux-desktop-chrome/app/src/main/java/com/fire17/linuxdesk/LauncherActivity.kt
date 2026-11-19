@@ -133,7 +133,17 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         bindCheck(R.id.opt_auto_kbd, settings.autoKeyboard) { settings.autoKeyboard = it }
         bindCheck(R.id.opt_legacy, settings.legacyDrawing) { settings.legacyDrawing = it }
         bindCheck(R.id.opt_noseccomp, settings.prootNoSeccomp) { settings.prootNoSeccomp = it }
-        bindCheck(R.id.opt_gpu, settings.useGpu) { settings.useGpu = it }
+        bindCheck(R.id.opt_gpu, settings.useGpu) {
+            settings.useGpu = it
+            if (it) settings.gpuCrashed = false   // turning it ON again is an explicit "try the GPU"
+            showGpuPin()
+        }
+        findViewById<Button>(R.id.btn_gpu_retry).setOnClickListener {
+            settings.gpuCrashed = false
+            showGpuPin()
+            Toast.makeText(this, R.string.ld_gpu_retry_done, Toast.LENGTH_SHORT).show()
+        }
+        showGpuPin()
         bindGpuSupport()   // GPU v2: grey out + explain on phones without an Adreno/KGSL GPU
         // Live (ld-perf): flips the running session's sound at once; also the stored value for the next Start.
         bindCheck(R.id.opt_sound, settings.sound) { com.fire17.linuxdesk.audio.SoundSwitch.set(this, it) }
@@ -295,6 +305,14 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         }
         cb.isEnabled = false
         hint.setText(why)
+        findViewById<Button>(R.id.btn_gpu_retry).visibility = View.GONE
+    }
+
+    /** After a GPU-process crash (settings.gpuCrashed) with GPU mode ON: say so and offer "Retry GPU". */
+    private fun showGpuPin() {
+        val pinned = settings.useGpu && settings.gpuCrashed
+        findViewById<Button>(R.id.btn_gpu_retry).visibility = if (pinned) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.gpu_hint).setText(if (pinned) R.string.ld_gpu_pinned else R.string.ld_gpu_hint)
     }
 
     private fun bindCheck(id: Int, value: Boolean, set: (Boolean) -> Unit) {

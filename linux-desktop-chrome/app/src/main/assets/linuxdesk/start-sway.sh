@@ -122,16 +122,19 @@ geo=$(xdotool getdisplaygeometry 2>/dev/null)
 ) &
 FIT=$!
 
-# Drop flags that fight a window manager; Chrome draws through Wayland instead of lorie's X.
-n=$#
+# Drop flags that fight a window manager; Chrome draws through Wayland instead of lorie's X. GPU guard (as in
+# start-omarchy.sh): no --use-gl= from GPU mode → --disable-gpu, whatever Mesa is installed; SwiftShader stays.
+n=$#; GL=0
 while [ "$n" -gt 0 ]; do
   a=$1; shift; n=$((n - 1))
   case "$a" in
     --window-position=*|--window-size=*|--start-maximized) ;;
     --ozone-platform=*) ;;
+    --use-gl=*|--disable-gpu) GL=1; set -- "$@" "$a" ;;
     *) set -- "$@" "$a" ;;
   esac
 done
+[ "$GL" = 1 ] || { set -- --disable-gpu "$@"; echo "[sway] GPU mode off: added --disable-gpu"; }
 
 # LINUXDESK_WINDOW_UP: the app shows RUNNING when the first browser window is in sway's tree.
 (

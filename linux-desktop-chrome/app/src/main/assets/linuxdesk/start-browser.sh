@@ -48,6 +48,11 @@ if [ "${LINUXDESK_GENIE:-0}" = "1" ] || [ -e /etc/linuxdesk/genie-enabled ]; the
   fi
 fi
 
+# GPU guard (as in start-omarchy.sh): no --use-gl= from GPU mode → --disable-gpu, whatever Mesa is installed.
+GL=0
+for a in "$@"; do case "$a" in --use-gl=*|--disable-gpu) GL=1 ;; esac; done
+[ "$GL" = 1 ] || { set -- --disable-gpu "$@"; echo "[browser] GPU mode off: added --disable-gpu"; }
+
 echo "[browser] exec $BIN $*"
 "$BIN" "$@"
 CODE=$?

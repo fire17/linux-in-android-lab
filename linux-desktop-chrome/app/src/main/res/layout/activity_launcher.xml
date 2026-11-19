@@ -224,6 +224,15 @@
             android:textSize="12sp"
             android:text="@string/ld_gpu_hint" />
 
+        <!-- Shown only after Chromium's GPU process crashed (settings.gpuCrashed): later Starts stay on software. -->
+        <Button
+            android:id="@+id/btn_gpu_retry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:text="@string/ld_gpu_retry"
+            android:visibility="gone" />
+
         <!-- Sound out (audio/AudioOut.kt): guest audio plays on the phone speaker. Default ON. Live (audio/SoundSwitch). -->
         <CheckBox
             android:id="@+id/opt_sound"

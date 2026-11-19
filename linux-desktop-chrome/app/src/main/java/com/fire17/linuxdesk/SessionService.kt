@@ -205,7 +205,9 @@ class SessionService : Service() {
             }
             if (stopping) return
             // GPU v2 (experimental, setting OFF by default): Adreno only; installs the kgsl Mesa once. Never fails the session.
-            GpuSession.prepare(proot, settings.useGpu)
+            // A GPU-process crash pins software for the next Starts too (settings.gpuCrashed; "Retry GPU" clears it).
+            GpuSession.onCrashPinned = { settings.gpuCrashed = true }
+            GpuSession.prepare(proot, settings.useGpu, settings.gpuCrashed)
             if (stopping) return
 
             SessionBus.setState(State.STARTING_X, getString(R.string.ld_state_x))

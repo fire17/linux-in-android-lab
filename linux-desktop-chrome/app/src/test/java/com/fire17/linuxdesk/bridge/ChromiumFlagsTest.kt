@@ -87,6 +87,18 @@ class ChromiumFlagsTest {
         assertTrue(ChromiumFlags.guestGpuEnv(useGpu = false).isEmpty())
     }
 
+    @Test fun gpuOffAlwaysDisablesGpuButKeepsSwiftShader() {
+        for (mode in ChromiumFlags.Mode.values()) for (fallback in listOf(false, true)) {
+            val f = ChromiumFlags.build(phone.copy(mode = mode, useGpu = false, gpuFallback = fallback))
+            assertEquals("mode $mode fallback $fallback", 1, f.count { it == "--disable-gpu" })
+            assertFalse(f.any { it in ChromiumFlags.GPU_FLAGS })
+            assertFalse("SwiftShader must stay", "--disable-software-rasterizer" in f)
+            assertTrue(ChromiumFlags.guestGpuEnv(useGpu = false, gpuFallback = fallback).isEmpty())
+        }
+        // GPU on: SwiftShader stays too (Chromium's own fallback after GPU-process crashes).
+        assertFalse("--disable-software-rasterizer" in ChromiumFlags.build(phone.copy(useGpu = true)))
+    }
+
     @Test fun gpuOnDropsDisableGpu() {
         val f = ChromiumFlags.build(phone.copy(useGpu = true))
         assertFalse("--disable-gpu" in f)

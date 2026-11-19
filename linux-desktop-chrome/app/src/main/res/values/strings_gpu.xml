@@ -6,4 +6,7 @@
     <string name="ld_gpu_unsupported">GPU acceleration: not supported on this GPU yet (needs an Adreno GPU, /dev/kgsl-3d0)</string>
     <string name="ld_gpu_blocked">GPU acceleration: this phone does not let apps open the GPU device (/dev/kgsl-3d0)</string>
     <string name="ld_gpu_abi">GPU acceleration: needs a 64-bit ARM phone</string>
+    <string name="ld_gpu_retry">Retry GPU</string>
+    <string name="ld_gpu_pinned">Chromium\'s GPU process crashed in an earlier session, so LinuxDesk uses software rendering. Tap \"Retry GPU\" to try the GPU at the next Start.</string>
+    <string name="ld_gpu_retry_done">The GPU will be tried again at the next Start</string>
 </resources>

@@ -21,6 +21,15 @@ class GpuModeTest {
         assertEquals(GpuMode.Support.SUPPORTED, GpuMode.probe("arm64-v8a", tmp))
     }
 
+    @Test fun startFollowsTheSettingOnly() {
+        // Setting OFF (default): never GPU, pinned or not (an installed kgsl Mesa is not an input at all).
+        assertEquals(GpuMode.Start.OFF, GpuMode.startDecision(setting = false, crashPinned = false))
+        assertEquals(GpuMode.Start.OFF, GpuMode.startDecision(setting = false, crashPinned = true))
+        // Setting ON: a crash in an earlier session keeps software until "Retry GPU" clears the pin.
+        assertEquals(GpuMode.Start.PINNED_SOFTWARE, GpuMode.startDecision(setting = true, crashPinned = true))
+        assertEquals(GpuMode.Start.TRY_GPU, GpuMode.startDecision(setting = true, crashPinned = false))
+    }
+
     @Test fun setupArgvPerDistro() {
         assertEquals(listOf("/bin/sh", GpuMode.SETUP_SCRIPT, "alpine"), GpuMode.setupArgv("alpine"))
         assertEquals("arch", GpuMode.setupArgv("omarchy").last())

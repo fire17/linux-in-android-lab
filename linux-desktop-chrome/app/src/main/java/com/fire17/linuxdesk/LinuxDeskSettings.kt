@@ -86,4 +86,13 @@ class LinuxDeskSettings(context: Context) {
     var useGpu: Boolean
         get() = p.getBoolean("useGpu", false)
         set(v) = p.edit().putBoolean("useGpu", v).apply()
+
+    /**
+     * Chromium's GPU process crashed while GPU mode was ON. Later Starts then use software rendering instead of
+     * trying the GPU again each time (GpuMode.startDecision). Cleared by "Retry GPU" in the launcher, or by turning
+     * GPU acceleration ON again.
+     */
+    var gpuCrashed: Boolean
+        get() = p.getBoolean("gpu_crashed", false)
+        set(v) = p.edit().putBoolean("gpu_crashed", v).commit().let { }
 }

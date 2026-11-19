@@ -50,6 +50,25 @@ object GpuMode {
         return support(exists, opens, primaryAbi)
     }
 
+    enum class Start {
+        /** Setting OFF (the default): software, setup-gpu.sh never runs, whatever Mesa the guest has. */
+        OFF,
+        /** Setting ON, but Chromium's GPU process crashed in an earlier session: software until "Retry GPU". */
+        PINNED_SOFTWARE,
+        /** Setting ON and not pinned: prepare the driver and try the GPU. */
+        TRY_GPU,
+    }
+
+    /**
+     * The Start decision. It follows the user's setting only: an installed kgsl Mesa (the gpu-v1 marker) or a
+     * working /dev/kgsl-3d0 never turns GPU mode on by itself.
+     */
+    fun startDecision(setting: Boolean, crashPinned: Boolean): Start = when {
+        !setting -> Start.OFF
+        crashPinned -> Start.PINNED_SOFTWARE
+        else -> Start.TRY_GPU
+    }
+
     /** Distro id as Distro.id ("alpine" / "omarchy") → the argument setup-gpu.sh takes. */
     fun setupArgv(distroId: String): List<String> = listOf("/bin/sh", SETUP_SCRIPT, if (distroId == "omarchy") "arch" else "alpine")
 
