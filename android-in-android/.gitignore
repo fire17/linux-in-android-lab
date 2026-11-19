@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+# Fetched at CI time by scripts/fetch-*.sh (never committed):
+app/src/main/assets/scrcpy-server.jar
+app/src/main/assets/rootfs/
+app/src/main/jniLibs/
+.fetch-cache/

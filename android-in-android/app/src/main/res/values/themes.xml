@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Platform Material theme: no AppCompat dependency needed. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.DarkActionBar">
+        <item name="android:colorPrimary">#1B1F24</item>
+        <item name="android:colorAccent">#2F81F7</item>
+        <item name="android:statusBarColor">#1B1F24</item>
+    </style>
+</resources>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Stream backend: ADB over TCP to redroid / emulator / spare phone -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- OnDevice AVF track. These are signature|development(|preinstalled): installing does NOT
+         grant them. Declared so `adb shell pm grant` can grant them (scripts/avf-grant.sh). -->
+    <uses-permission
+        android:name="android.permission.MANAGE_VIRTUAL_MACHINE"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission
+        android:name="android.permission.USE_CUSTOM_VIRTUAL_MACHINE"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Not required: the app must also install on phones without AVF. Checked at runtime. -->
+    <uses-feature
+        android:name="android.software.virtualization_framework"
+        android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="36">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.PhoneActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+    </application>
+</manifest>

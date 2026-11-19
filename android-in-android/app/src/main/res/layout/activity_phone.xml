@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/tvHud"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#1B1F24"
+        android:fontFamily="monospace"
+        android:padding="4dp"
+        android:textColor="#9DA7B3"
+        android:textSize="11sp" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <com.fire17.phoneinphone.ui.AspectFrameLayout
+            android:id="@+id/guestFrame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center">
+
+            <com.fire17.phoneinphone.ui.GuestSurfaceView
+                android:id="@+id/guestSurface"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </com.fire17.phoneinphone.ui.AspectFrameLayout>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#F2FFFFFF">
+
+            <LinearLayout
+                android:id="@+id/stages"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="8dp" />
+        </ScrollView>
+    </FrameLayout>
+
+    <ScrollView
+        android:id="@+id/logScroll"
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:background="#0D1117"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:padding="4dp"
+            android:textColor="#C9D1D9"
+            android:textIsSelectable="true"
+            android:textSize="10sp" />
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/navBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#1B1F24"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnBack"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="◀"
+            android:textColor="#FFFFFF" />
+        <Button
+            android:id="@+id/btnHome"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="●"
+            android:textColor="#FFFFFF" />
+        <Button
+            android:id="@+id/btnRecents"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="■"
+            android:textColor="#FFFFFF" />
+        <Button
+            android:id="@+id/btnKeyboard"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="⌨"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnLog"
+        style="?android:attr/buttonBarButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="#0D1117"
+        android:text="log"
+        android:textColor="#9DA7B3"
+        android:textSize="11sp" />
+</LinearLayout>
