@@ -109,7 +109,7 @@ class IrohLink(
             } catch (_: InterruptedException) {
                 break
             } catch (t: Throwable) {
-                if (running) log("genie link offline: ${t.javaClass.simpleName}; retrying in 3 s")
+                if (running) log("genie link offline: ${t.javaClass.simpleName}: ${t.message?.take(200)}; retrying in 3 s")
             }
             setOnline(false)
             if (!running) break
