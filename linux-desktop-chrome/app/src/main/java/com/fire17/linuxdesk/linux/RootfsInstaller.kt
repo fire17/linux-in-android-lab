@@ -114,6 +114,7 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
     fun installHelpers(focusBridgeConfigJs: String?) {
         val dest = File(rootfsDir, "opt/linuxdesk").apply { mkdirs() }
         copyAssetDir("linuxdesk", dest)
+        com.fire17.linuxdesk.ota.BundleStore(context.filesDir, com.fire17.linuxdesk.BuildConfig.VERSION_CODE.toLong(), com.fire17.linuxdesk.BuildConfig.VERSION_NAME).overlayActive(dest) // OTA v1: signed ota/active over APK assets (no-op when none)
         for (n in listOf("start-browser.sh", "fit-window.sh", "setup-packages.sh",
                 "setup-omarchy.sh", "start-omarchy.sh", "setup-genie-arch.sh")) {
             File(dest, n).takeIf { it.isFile }?.setExecutable(true, false)

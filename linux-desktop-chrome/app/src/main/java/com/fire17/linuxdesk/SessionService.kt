@@ -21,8 +21,10 @@ import com.fire17.linuxdesk.audio.PulseHost
 import com.fire17.linuxdesk.audio.MicIn
 import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.bridge.FocusBridge
+import com.fire17.linuxdesk.camera.PhoneCamera
 import com.fire17.linuxdesk.genie.GenieRuntime
 import com.fire17.linuxdesk.genie.GenieSettings
+import com.fire17.linuxdesk.gpu.GpuSession
 import com.fire17.linuxdesk.linux.Distro
 import com.fire17.linuxdesk.linux.ProotRuntime
 import com.fire17.linuxdesk.linux.RootfsInstaller
@@ -54,6 +56,11 @@ class SessionService : Service() {
         const val ACTION_MIC_APPLY = "com.fire17.linuxdesk.action.MIC_APPLY"
         /** Notification "Stop" for the microphone: always turns it OFF. */
         const val ACTION_MIC_OFF = "com.fire17.linuxdesk.action.MIC_OFF"
+        /** Re-read PhoneCamera.consent: ON starts the loopback camera server and restarts the browser so the
+         *  phone-camera extension loads; OFF stops the server at once. Carries no on/off value. Not exported. */
+        const val ACTION_CAMERA_APPLY = "com.fire17.linuxdesk.action.CAMERA_APPLY"
+        /** Notification "Stop camera": always turns it OFF. */
+        const val ACTION_CAMERA_OFF = "com.fire17.linuxdesk.action.CAMERA_OFF"
         private const val CHANNEL = "linuxdesk_session"
         private const val NOTIFICATION_ID = 1917
         private const val TAG = "LinuxDesk"
@@ -119,6 +126,8 @@ class SessionService : Service() {
             ACTION_STOP -> stopSession()
             ACTION_MIC_OFF -> { MicIn.setConsent(false); micOff(); SessionBus.notifyMicChanged() }
             ACTION_MIC_APPLY -> if (MicIn.consent) Thread({ micOn() }, "LinuxDeskMicOn").start() else micOff()
+            ACTION_CAMERA_OFF -> { PhoneCamera.setConsent(false); cameraOff(); SessionBus.notifyMicChanged() }
+            ACTION_CAMERA_APPLY -> if (PhoneCamera.consent) Thread({ cameraOn(restart = true) }, "LinuxDeskCamOn").start() else cameraOff()
             GenieRuntime.ACTION_STOP_GENIE -> {
                 GenieRuntime.stopGenie(this)
                 if (worker?.isAlive == true || SessionBus.snapshot.state !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
@@ -157,6 +166,14 @@ class SessionService : Service() {
             focusBridge?.stop()
             focusBridge = if (settings.autoKeyboard) FocusBridge().start() else null
             installer.installHelpers(focusBridge?.configJs())
+            // Phone camera: start the loopback MJPEG server only if the switch is ON, then write the extension's
+            // config.js (port + token, or port 0 = off) before Chromium starts.
+            if (PhoneCamera.consent) PhoneCamera.start(this)
+            PhoneCamera.writeConfig(installer.rootfsDir)
+            if (PhoneCamera.running) {
+                SessionBus.log("camera: phone camera available to Linux")
+                try { goForeground() } catch (t: Throwable) { SessionBus.log("camera: foreground type not granted (${t.javaClass.simpleName})") }
+            }
             // installHelpers copies assets/linuxdesk recursively (deskd/ included) but marks only its own three
             // scripts executable; GenieRuntime runs setup-genie.sh by path, so it needs the bit too.
             File(installer.rootfsDir, "opt/linuxdesk/setup-genie.sh").takeIf { it.isFile }?.setExecutable(true, false)
@@ -175,6 +192,9 @@ class SessionService : Service() {
                 }
             }
             if (stopping) return
+            // GPU v2 (experimental, setting OFF by default): Adreno only; installs the kgsl Mesa once. Never fails the session.
+            GpuSession.prepare(proot, settings.useGpu)
+            if (stopping) return
 
             SessionBus.setState(State.STARTING_X, getString(R.string.ld_state_x))
             startXServer()
@@ -189,11 +209,14 @@ class SessionService : Service() {
                 SessionBus.log("warning: the display view did not connect within 30 s; starting the browser anyway")
             }
             if (stopping) return
+            GpuSession.selfCheck(proot)   // GPU v2: logs "gpu: renderer=… hardware=…"; no-op when GPU mode is off
 
             // Audio (spec 02 #1 v2): the ONE guest PulseAudio (audio/PulseHost) starts before the browser, so
             // Chromium gets PULSE_SERVER in its env. Any failure is logged and the session continues silently.
             try {
                 AudioOut.prepare(this)             // Sound ON (default): loopback TCP record module, random port
+                // Mic always on (Tami, AC132525): the saved setting re-arms consent each session, if permission exists.
+                if (settings.micAlwaysOn && MicIn.hasPermission(this)) MicIn.setConsent(true)
                 MicGuest.prepare()                 // mic switch already ON: PulseAudio must start even if Sound is OFF
                 if (PulseHost.start(proot)) AudioOut.start()
             } catch (t: Throwable) {
@@ -244,7 +267,9 @@ class SessionService : Service() {
             screenWidthPx = if (SessionBus.viewWidth > 0) SessionBus.viewWidth else dm.widthPixels,
             screenHeightPx = if (SessionBus.viewHeight > 0) SessionBus.viewHeight else dm.heightPixels,
             extensionDir = if (focusBridge != null) "/opt/linuxdesk/focus-bridge" else null,
-            useGpu = settings.useGpu,
+            extraExtensionDirs = if (PhoneCamera.running) listOf(PhoneCamera.EXTENSION_DIR) else emptyList(),
+            useGpu = GpuSession.active,          // GPU v2: true only if the setting is ON and the device/driver are ready
+            gpuFallback = GpuSession.fallback,
             acceptLanguages = langs,
         )
         return ChromiumFlags.build(params)
@@ -256,7 +281,7 @@ class SessionService : Service() {
         SessionBus.browserWindowUp = false
 
         // PulseHost.guestEnv() is empty when PulseAudio is not running, so Chromium then starts exactly as before.
-        val p = proot.start(listOf(proot.distro.startScript) + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv(), sysvipc = USE_SYSVIPC)
+        val p = proot.start(listOf(proot.distro.startScript) + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv() + GpuSession.guestEnv(), sysvipc = USE_SYSVIPC)
         browser = p
         Thread({
             try {
@@ -265,6 +290,10 @@ class SessionService : Service() {
                     if (line.startsWith("LINUXDESK_WINDOW_UP") && !SessionBus.browserWindowUp) {
                         SessionBus.browserWindowUp = true
                         SessionBus.setState(State.RUNNING, getString(R.string.ld_state_running))
+                    }
+                    // GPU v2: a GPU-process crash pins software rendering and restarts the browser once.
+                    if (GpuSession.onBrowserLine(line) && GpuSession.restartWanted() && browser === p && !stopping) {
+                        Thread({ restartBrowser() }, "LinuxDeskGpuFallback").start()
                     }
                 }
             } catch (_: Exception) {
@@ -310,6 +339,7 @@ class SessionService : Service() {
         stopping = true
         SessionBus.setState(State.STOPPING, getString(R.string.ld_state_stopping))
         endMic()   // at once, on the caller's thread: the mic is released before anything else is torn down
+        endCamera()
         Thread {
             try { GenieRuntime.stop() } catch (_: Throwable) {}
             killBrowser()
@@ -329,6 +359,7 @@ class SessionService : Service() {
 
     override fun onDestroy() {
         endMic()
+        endCamera()
         if (!stopping) {
             stopping = true
             try { GenieRuntime.stop() } catch (_: Throwable) {}
@@ -346,6 +377,33 @@ class SessionService : Service() {
     // ------------------------------------------------------------------------------------------ microphone
 
     @Volatile private var micPort = 0
+
+    // ------------------------------------------------------------------------------------------ phone camera
+
+    /** Switch turned ON mid-session: start the server, write config.js, restart Chromium to load the extension. */
+    private fun cameraOn(restart: Boolean) {
+        if (!PhoneCamera.consent || stopping) return
+        val wasRunning = PhoneCamera.running
+        if (PhoneCamera.start(this) == null) { SessionBus.log("camera: not started (permission missing or no back camera)"); return }
+        PhoneCamera.writeConfig(sessionDistro.rootfsDir(this))
+        SessionBus.log("camera: phone camera available to Linux")
+        try { goForeground() } catch (t: Throwable) { SessionBus.log("camera: foreground type not granted (${t.javaClass.simpleName})") }
+        updateNotification()
+        if (restart && !wasRunning && SessionBus.snapshot.state in setOf(State.RUNNING, State.BROWSER_EXITED)) restartBrowser()
+    }
+
+    /** OFF: the server stops at once (camera closed, port gone). The extension then has nothing to read. */
+    private fun cameraOff() {
+        PhoneCamera.stop()
+        try { PhoneCamera.writeConfig(sessionDistro.rootfsDir(this)) } catch (_: Throwable) {}
+        updateNotification()
+    }
+
+    /** Session ending: consent does not outlive the session. */
+    private fun endCamera() {
+        PhoneCamera.setConsent(false)
+        SessionBus.notifyMicChanged()
+    }
 
     /** Session ending: consent does not outlive the session. */
     private fun endMic() {
@@ -370,9 +428,17 @@ class SessionService : Service() {
         goForeground(withMic = true)
         try {
             if (micPort == 0) {
-                val port = MicGuest.pickPort()
-                if (!runPactl(MicGuest.loadScript(port))) {
-                    SessionBus.log("mic: could not add the Linux microphone source (is PulseAudio up?)")
+                // Up to 3 tries: on Tami's phone the first load failed with no reason while the same pactl steps
+                // run one by one succeeded, so a transient failure (PulseAudio still settling) is the likely cause.
+                var port = 0
+                for (attempt in 1..3) {
+                    val p = MicGuest.pickPort()
+                    if (runPactl(MicGuest.loadScript(p))) { port = p; break }
+                    SessionBus.log("mic: adding the Linux microphone source failed (try $attempt/3)")
+                    if (attempt < 3) Thread.sleep(1500L * attempt)
+                }
+                if (port == 0) {
+                    SessionBus.log("mic: could not add the Linux microphone source after 3 tries")
                     goForeground(withMic = false)
                     return
                 }
@@ -399,11 +465,17 @@ class SessionService : Service() {
     /**
      * Runs a multi-line pactl script (MicGuest; it exports PULSE_SERVER=PulseHost's socket) against the ONE guest
      * PulseAudio. A script, not PulseHost.pactl(), because unloading must match OUR modules by args and never touch
-     * audio-out's module-simple-protocol-tcp. Output is not logged (it is module ids only, but keep it quiet).
+     * audio-out's module-simple-protocol-tcp. On failure the exit code and the last output lines are logged:
+     * Tami's phone (2026-11-19 21:01) showed only "could not add the Linux microphone source" with no reason, while the
+     * same pactl steps run one by one through the genie all succeeded.
      */
     private fun runPactl(script: String): Boolean {
-        if (!PulseHost.running) return false
+        if (!PulseHost.running) { SessionBus.log("mic: pactl skipped, PulseAudio is not running"); return false }
         val r = ProotRuntime(this, settings.prootNoSeccomp, sessionDistro).runOnce(script, timeoutSec = 15)
+        if (r.exitCode != 0) {
+            SessionBus.log("mic: pactl script failed, exit=${r.exitCode ?: "timeout"} after ${r.millis} ms")
+            r.tail.lines().filter { it.isNotBlank() }.takeLast(8).forEach { SessionBus.log("mic: pactl> ${it.take(200)}") }
+        }
         return r.exitCode == 0
     }
 
@@ -435,6 +507,7 @@ class SessionService : Service() {
         if (Build.VERSION.SDK_INT >= 34) {
             var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             if (withMic) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            if (PhoneCamera.running) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
             try {
                 startForeground(NOTIFICATION_ID, n, type)
             } catch (e: Exception) {
@@ -478,6 +551,12 @@ class SessionService : Service() {
             b.addAction(Notification.Action.Builder(null, getString(R.string.ld_mic_stop), micStop).build())
         }
         // Spec 01 §4 rule 2: while a genie can connect, the session notification offers "Stop genie".
+        if (PhoneCamera.running) {
+            val camStop = PendingIntent.getService(this, 4,
+                Intent(this, SessionService::class.java).setAction(ACTION_CAMERA_OFF), flags)
+            b.setSubText(getString(R.string.ld_camera_on_text))
+            b.addAction(Notification.Action.Builder(null, getString(R.string.ld_camera_stop), camStop).build())
+        }
         if (GenieSettings.genieAccess(this) || GenieSettings.localLink(this)) {
             b.addAction(Notification.Action.Builder(null, getString(R.string.ld_genie_stop),
                 GenieRuntime.stopPendingIntent(this)).build())

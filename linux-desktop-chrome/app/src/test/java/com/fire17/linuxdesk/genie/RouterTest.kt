@@ -249,6 +249,17 @@ class RouterTest {
         assertFalse(Router.isMicVerb("audio.out"))   // sound out is not the mic
     }
 
+    /** The phone camera is the in-app switch only — no link verb may touch it, nothing relayed. */
+    @Test fun cameraVerbsAreAlwaysDenied() {
+        val w = authed()
+        var id = 1
+        for (v in listOf("camera.start", "camera.on", "camera.list", "cam.start", "cam.snap", "CAMERA.ON")) {
+            assertEquals(v, "denied", cmd(w, v, id++).getString("error"))
+        }
+        assertTrue(relay.calls.isEmpty())
+        assertFalse(Router.isCameraVerb("calendar.list"))
+    }
+
     @Test fun badJsonKeepsConnectionOpen() {
         val w = authed()
         w.sendRaw("{nope".toByteArray())

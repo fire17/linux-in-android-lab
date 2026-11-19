@@ -19,6 +19,11 @@
          ON; default OFF. The genie link cannot turn it on. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Phone camera for Linux (camera/CameraServer.kt). Requested at runtime ONLY when the person turns the in-app
+         switch ON; default OFF. The genie link cannot turn it on (Router refuses camera.* / cam.*). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Genie link, fs.* verbs (storage lane). Requested only when the person opens Storage; sideloaded APK only
          (spec 02 #11). -->
     <uses-permission
@@ -75,7 +80,7 @@
         <service
             android:name=".SessionService"
             android:exported="false"
-            android:foregroundServiceType="specialUse|microphone">
+            android:foregroundServiceType="specialUse|microphone|camera">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a user-started Linux desktop session (X server + Chromium) alive while the user works in it." />
@@ -93,6 +98,12 @@
             android:name=".hw.HwActivity"
             android:exported="false"
             android:label="@string/ld_hw_title" />
+
+        <!-- OTA v1 Updates screen (K/ota/UpdatesActivity). Not exported: only a tap in the app can install. -->
+        <activity
+            android:name=".ota.UpdatesActivity"
+            android:exported="false"
+            android:label="@string/ld_ota_title" />
 
         <activity
             android:name=".storage.ReviewActivity"

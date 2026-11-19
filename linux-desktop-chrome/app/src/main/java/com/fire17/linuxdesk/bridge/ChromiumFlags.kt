@@ -31,6 +31,7 @@ import kotlin.math.roundToInt
  *  --load-extension            The bundled focus-bridge extension, which pops the Android keyboard when a
  *                              web text field gets focus. Chromium 137+ gates this switch behind the
  *                              feature DisableLoadExtensionCommandLineSwitch, so that feature is disabled.
+ *                              Params.extraExtensionDirs (phone-camera) joins the same comma list.
  */
 object ChromiumFlags {
 
@@ -57,6 +58,8 @@ object ChromiumFlags {
         val screenHeightPx: Int,
         val userDataDir: String = "/root/.config/linuxdesk-chromium",
         val extensionDir: String? = null,
+        /** More unpacked extensions loaded with [extensionDir] (e.g. the phone-camera extension when its switch is ON). */
+        val extraExtensionDirs: List<String> = emptyList(),
         val useGpu: Boolean = false,
         /** GPU was requested but the GPU process crashed this session: back to software (--disable-gpu). */
         val gpuFallback: Boolean = false,
@@ -92,6 +95,18 @@ object ChromiumFlags {
     /** Guest env to add for X apps / Chromium. Empty when GPU mode is off or fell back. */
     fun guestGpuEnv(useGpu: Boolean, gpuFallback: Boolean = false): List<String> =
         if (useGpu && !gpuFallback) GPU_ENV else emptyList()
+
+    /**
+     * The same command line in software mode: GPU_FLAGS removed, --disable-gpu added (before the trailing URL /
+     * --app=). For callers that cached a built flag list (GenieRuntime/deskd) when the GPU fallback kicks in.
+     */
+    fun withSoftwareFallback(flags: List<String>): List<String> {
+        if ("--disable-gpu" in flags) return flags
+        val out = flags.filterNot { it in GPU_FLAGS }.toMutableList()
+        val tail = out.indexOfFirst { !it.startsWith("--") || it.startsWith("--app=") || it == "--kiosk" }
+        if (tail >= 0) out.add(tail, "--disable-gpu") else out += "--disable-gpu"
+        return out
+    }
 
     /**
      * A line from Chromium's stderr that means the GPU process died (it then retries, and after a few times
@@ -153,8 +168,10 @@ object ChromiumFlags {
             flags += "--window-size=$w,$h"
         }
         p.acceptLanguages?.takeIf { it.isNotBlank() }?.let { flags += "--accept-lang=$it" }
-        if (p.extensionDir != null) {
-            flags += "--load-extension=${p.extensionDir}"
+        val extensions = listOfNotNull(p.extensionDir) + p.extraExtensionDirs.filter { it.isNotBlank() }
+        if (extensions.isNotEmpty()) {
+            // One switch, comma-separated: a second --load-extension would replace the first.
+            flags += "--load-extension=${extensions.joinToString(",")}"
             flags += "--disable-features=DisableLoadExtensionCommandLineSwitch"
         }
         when (p.mode) {

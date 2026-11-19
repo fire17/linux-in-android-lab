@@ -7,6 +7,11 @@
     <string name="ld_mic_on_text">המיקרופון פועל · לינוקס שומעת את הטלפון</string>
     <string name="ld_mic_stop">עצירת המיקרופון</string>
     <string name="ld_mic_denied">לא ניתנה הרשאה למיקרופון, אז הוא נשאר כבוי.</string>
+    <string name="ld_camera_switch">מצלמת הטלפון ללינוקס</string>
+    <string name="ld_camera_help">כבוי כברירת מחדל. כשהוא פועל, אתרים ב-Chromium בלינוקס יכולים לבחור \"Phone camera\" (המצלמה האחורית של הטלפון). המצלמה נדלקת רק כשאתר משתמש בה. רק המתג הזה יכול להפעיל אותה, לא הג׳יני. נכבה כשהסשן נגמר.</string>
+    <string name="ld_camera_on_text">מצלמת הטלפון זמינה ללינוקס</string>
+    <string name="ld_camera_stop">עצירת המצלמה</string>
+    <string name="ld_camera_denied">לא ניתנה הרשאה למצלמה, אז היא נשארת כבויה.</string>
     <string name="ld_notification_text">סשן לינוקס פעיל (שרת X ו-Chromium)</string>
 
     <string name="ld_start">הפעלה</string>

@@ -124,6 +124,12 @@
             android:layout_height="wrap_content"
             android:text="@string/ld_hw_open" />
 
+        <Button
+            android:id="@+id/btn_ota"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_ota_title" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -194,11 +200,20 @@
             android:layout_height="wrap_content"
             android:text="@string/ld_opt_noseccomp" />
 
+        <!-- GPU acceleration (gpu/GpuSession.kt): experimental, default OFF; disabled + explained on non-Adreno phones. -->
         <CheckBox
             android:id="@+id/opt_gpu"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/ld_opt_gpu" />
+            android:text="@string/ld_opt_gpu_v2" />
+
+        <TextView
+            android:id="@+id/gpu_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:textSize="12sp"
+            android:text="@string/ld_gpu_hint" />
 
         <!-- Sound out (audio/AudioOut.kt): guest audio plays on the phone speaker. Default ON. -->
         <CheckBox
@@ -219,6 +234,20 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/ld_mic_help"
+            android:textSize="12sp" />
+
+        <!-- Phone camera for Linux (camera/CameraServer.kt). Default OFF, never persisted, resets when the session ends. -->
+        <Switch
+            android:id="@+id/opt_camera"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/ld_camera_switch" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_camera_help"
             android:textSize="12sp" />
 
         <TextView

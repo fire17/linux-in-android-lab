@@ -136,7 +136,7 @@ command -v i3 >/dev/null 2>&1 || { log "i3 missing after install"; exit 5; }
 # /usr/share/fonts/{misc,TTF}. Link them; X aborts without "fixed" and "cursor".
 mkdir -p /usr/share/fonts/X11
 for d in misc TTF OTF 75dpi 100dpi Type1; do
-  [ -d "/usr/share/fonts/$d" ] && [ ! -e "/usr/share/fonts/X11/$d" ] && ln -s "../$d" "/usr/share/fonts/X11/$d"
+  if [ -d "/usr/share/fonts/$d" ] && [ ! -e "/usr/share/fonts/X11/$d" ]; then ln -s "../$d" "/usr/share/fonts/X11/$d"; fi
 done
 [ -f /usr/share/fonts/misc/fonts.dir ] || mkfontdir /usr/share/fonts/misc 2>/dev/null || true
 fc-cache -f >/dev/null 2>&1 || true

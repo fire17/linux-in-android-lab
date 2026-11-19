@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OTA v1 Updates screen (K/ota/UpdatesActivity). -->
+<resources>
+    <string name="ld_ota_title">Updates</string>
+    <string name="ld_ota_check">Check</string>
+    <string name="ld_ota_install">Install</string>
+    <string name="ld_ota_later">Later</string>
+    <string name="ld_ota_auto_apply">Auto-apply guest updates (off by default)</string>
+    <string name="ld_ota_ledger">Update history</string>
+    <string name="ld_ota_ledger_empty">No updates yet.</string>
+    <string name="ld_ota_status_fmt">App %1$s · guest bundle %2$d (previous %3$d) %4$s</string>
+    <string name="ld_ota_trial">· on trial until the next healthy session</string>
+    <string name="ld_ota_working">Working …</string>
+    <string name="ld_ota_available">Bundle %1$d is available (%2$d files, signature ✓). Install applies it at the next session start.</string>
+    <string name="ld_ota_up_to_date">Up to date.</string>
+    <string name="ld_ota_installed">Bundle %1$d installed. It takes effect at the next session start; it rolls back automatically if that session is unhealthy.</string>
+    <string name="ld_ota_failed">Update failed: %1$s</string>
+</resources>

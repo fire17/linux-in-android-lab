@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GPU acceleration (experimental, OFF by default): gpu/GpuMode.kt + gpu/GpuSession.kt, notes/gpu-npu-plan.md §2. -->
+<resources>
+    <string name="ld_opt_gpu_v2">GPU acceleration (experimental)</string>
+    <string name="ld_gpu_hint">Uses the phone\'s Adreno GPU inside Linux (Turnip + Zink). First start downloads a ~13 MB driver. If Chromium\'s GPU process crashes, LinuxDesk switches back to software by itself. Applies at the next Start.</string>
+    <string name="ld_gpu_unsupported">GPU acceleration: not supported on this GPU yet (needs an Adreno GPU, /dev/kgsl-3d0)</string>
+    <string name="ld_gpu_blocked">GPU acceleration: this phone does not let apps open the GPU device (/dev/kgsl-3d0)</string>
+    <string name="ld_gpu_abi">GPU acceleration: needs a 64-bit ARM phone</string>
+</resources>

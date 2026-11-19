@@ -229,6 +229,24 @@ protocol and lane spec live outside this repo (`notes/spec/01-protocol-and-lanes
 | Pairing, the window gate, fs verbs, the delete review sheet | Written. Unit tests are written but not run (no JDK). |
 | On-device tests: cdp-pipe, xwd cost, unix socket, xbox calibration, proc-root | **Pending.** Nothing has run on a phone. |
 
+## Distro choice: Alpine (default) or Omarchy (phase 1)
+
+The launcher has a **Distro** switch. **Alpine** is the default and is unchanged: same rootfs dir (`files/rootfs`),
+same scripts, same markers. **Omarchy** is an Omarchy-*flavored* desktop, not literal Omarchy (no Hyprland: an app has
+no `/dev/dri`; see `notes/omarchy-research.json`). It is offered on arm64 phones only (Arch Linux ARM is aarch64 only), so
+the x86_64 emulator CI always runs Alpine.
+
+| | Alpine | Omarchy |
+|---|---|---|
+| rootfs dir | `files/rootfs` (bundled in the APK) | `files/rootfs-arch`, downloaded on first use: Arch Linux ARM aarch64 tarball (829 MB) from HTTPS ALARM mirrors, md5-checked against the mirror's `.md5`; the 2026-11-19 build is sha256-pinned and was GPG-verified on a Mac (the phone does not run GPG) |
+| first-run setup | `setup-packages.sh` (apk) → `etc/linuxdesk/packages-v1` | `setup-omarchy.sh` (pacman, `DisableSandbox`, Omarchy repo `pkgs.omarchy.org/stable/aarch64` trusted via a sha256-pinned `omarchy-keyring`) → `etc/linuxdesk/omarchy-v1`; ~733 MiB download, ~2.4 GB installed |
+| session | `start-browser.sh`: Chromium, no WM, `fit-window.sh` | `start-omarchy.sh`: i3 with Omarchy's theme + keybinds, then Google Chrome 158 (chromium fallback) |
+| genie | `setup-genie.sh` | `setup-genie-arch.sh` (same packages in Arch names, same `genie-v2` marker) |
+
+Switching never deletes the other distro's rootfs. Pick the theme with Super+Ctrl+Shift+Space (rofi), or
+`python3 /opt/linuxdesk/omarchy/omarchy-theme.py <name>` (23 Omarchy themes, from the `omarchy` package's files only;
+its Hyprland/sddm/systemd dependencies are never installed). Phone status: **NOT yet run on a device**.
+
 ## Next steps (not done)
 
 - Bundle a Termux-prefix rebuild (`TERMUX_APP__PACKAGE_NAME=com.fire17.linuxdesk`) to replace proot: native speed, Chromium 157, zink GPU on Snapdragon.

@@ -44,6 +44,15 @@ class LinuxDeskSettings(context: Context) {
         get() = p.getBoolean("sound", true)
         set(v) = p.edit().putBoolean("sound", v).apply()
 
+    /**
+     * Microphone to Linux, kept ON across sessions. Tami (voice AC132525, 2026-11-19 21:01): "אפשר שהמיקרופון יהיה
+     * דלוק כל הזמן, עד שנפתור את זה". So the default is ON and the session turns the mic on by itself at Start, once
+     * RECORD_AUDIO was granted once. The switch still turns it OFF, and the genie still cannot turn it on.
+     */
+    var micAlwaysOn: Boolean
+        get() = p.getBoolean("mic_always_on", true)
+        set(v) = p.edit().putBoolean("mic_always_on", v).apply()
+
     /** Off by default: inside proot there is no GPU device, so Chromium uses software compositing. */
     var useGpu: Boolean
         get() = p.getBoolean("useGpu", false)

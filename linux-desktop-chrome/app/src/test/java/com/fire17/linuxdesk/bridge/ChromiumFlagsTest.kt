@@ -65,6 +65,14 @@ class ChromiumFlagsTest {
         assertFalse(none.any { it.startsWith("--load-extension") })
     }
 
+    @Test fun phoneCameraExtensionJoinsTheSameLoadExtensionSwitch() {
+        val f = ChromiumFlags.build(phone.copy(extraExtensionDirs = listOf("/opt/linuxdesk/phone-camera")))
+        assertTrue("--load-extension=/opt/linuxdesk/focus-bridge,/opt/linuxdesk/phone-camera" in f)
+        assertEquals(1, f.count { it.startsWith("--load-extension") })
+        // OFF (default): only focus-bridge
+        assertTrue("--load-extension=/opt/linuxdesk/focus-bridge" in ChromiumFlags.build(phone))
+    }
+
     @Test fun urlNormalization() {
         assertEquals(ChromiumFlags.DEFAULT_URL, ChromiumFlags.normalizeUrl("  "))
         assertEquals("https://ynet.co.il", ChromiumFlags.normalizeUrl("ynet.co.il"))
@@ -112,5 +120,17 @@ class ChromiumFlagsTest {
         assertTrue(ChromiumFlags.isGpuCrashLine("ERROR:viz_main_impl.cc(186)] Exiting GPU process due to errors during initialization"))
         assertFalse(ChromiumFlags.isGpuCrashLine("[browser] exec chromium-browser --disable-gpu"))
         assertFalse(ChromiumFlags.isGpuCrashLine("ERROR:bus.cc(407)] Failed to connect to the bus"))
+    }
+
+    @Test fun softwareFallbackRewritesCachedFlags() {
+        for (mode in ChromiumFlags.Mode.values()) {
+            val gpu = ChromiumFlags.build(phone.copy(mode = mode, useGpu = true))
+            val sw = ChromiumFlags.withSoftwareFallback(gpu)
+            val want = ChromiumFlags.build(phone.copy(mode = mode, useGpu = true, gpuFallback = true))
+            assertEquals("mode $mode", want.toSet(), sw.toSet())
+            assertEquals(gpu.last(), sw.last())
+        }
+        val off = ChromiumFlags.build(phone)
+        assertEquals(off, ChromiumFlags.withSoftwareFallback(off))
     }
 }

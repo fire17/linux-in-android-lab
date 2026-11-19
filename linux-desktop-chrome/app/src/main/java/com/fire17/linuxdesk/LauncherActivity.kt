@@ -23,6 +23,7 @@ import android.widget.Toast
 import com.fire17.linuxdesk.SessionBus.State
 import com.fire17.linuxdesk.audio.MicIn
 import com.fire17.linuxdesk.bridge.ChromiumFlags
+import com.fire17.linuxdesk.camera.PhoneCamera
 import com.fire17.linuxdesk.genie.PairActivity
 import com.fire17.linuxdesk.linux.Distro
 import com.fire17.linuxdesk.storage.ReviewActivity
@@ -46,11 +47,14 @@ class LauncherActivity : Activity(), SessionBus.Listener {
     private var autoOpened = false
     private lateinit var micSwitch: Switch
     private var micSyncing = false
+    private lateinit var camSwitch: Switch
+    private var camSyncing = false
 
     companion object {
         /** Set by DesktopActivity's "Back to launcher": stay on this screen, don't bounce back to the desktop. */
         const val EXTRA_STAY = "com.fire17.linuxdesk.extra.STAY"
         private const val REQ_MIC = 2
+        private const val REQ_CAMERA = 3
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -127,12 +131,26 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         // Microphone to Linux: the ONLY place consent can become true. RECORD_AUDIO is asked for only here, only
         // when the person turns it ON. Deliberately no autostart/intent extra can flip it.
         micSwitch = findViewById(R.id.opt_mic)
-        micSwitch.isChecked = MicIn.consent
+        // Always on (Tami AC132525): show the saved choice, and arm consent now if permission was already granted.
+        if (settings.micAlwaysOn && MicIn.hasPermission(this) && !MicIn.consent) MicIn.setConsent(true)
+        micSwitch.isChecked = MicIn.consent || (settings.micAlwaysOn && !MicIn.hasPermission(this)).also {
+            if (it) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+        }
         micSwitch.setOnCheckedChangeListener { _, on ->
             if (micSyncing) return@setOnCheckedChangeListener
             if (!on) { setMic(false); return@setOnCheckedChangeListener }
             if (MicIn.hasPermission(this)) setMic(true)
             else { syncMicSwitch(false); requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC) }
+        }
+
+        // Phone camera for Linux: same rule as the mic. CAMERA is asked for only here, only when turned ON.
+        camSwitch = findViewById(R.id.opt_camera)
+        camSwitch.isChecked = PhoneCamera.consent
+        camSwitch.setOnCheckedChangeListener { _, on ->
+            if (camSyncing) return@setOnCheckedChangeListener
+            if (!on) { setCamera(false); return@setOnCheckedChangeListener }
+            if (PhoneCamera.hasPermission(this)) setCamera(true)
+            else { syncCamSwitch(false); requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_CAMERA) }
         }
 
         startBtn.setOnClickListener {
@@ -155,6 +173,9 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         }
         findViewById<Button>(R.id.btn_hw).setOnClickListener {
             startActivity(Intent(this, com.fire17.linuxdesk.hw.HwActivity::class.java))
+        }
+        findViewById<Button>(R.id.btn_ota).setOnClickListener {
+            startActivity(Intent(this, com.fire17.linuxdesk.ota.UpdatesActivity::class.java))
         }
         findViewById<Button>(R.id.btn_dev_options).setOnClickListener {
             try {
@@ -180,6 +201,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
 
     private fun setMic(on: Boolean) {
         if (on) MicIn.setConsent(true) else MicIn.setConsent(false)   // false also stops capture right now
+        settings.micAlwaysOn = on   // remembered across sessions (Tami AC132525: mic on all the time until it works)
         val s = SessionBus.snapshot.state
         if (s !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
             SessionService.start(this, if (on) SessionService.ACTION_MIC_APPLY else SessionService.ACTION_MIC_OFF)
@@ -188,16 +210,41 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         }
     }
 
+    private fun setCamera(on: Boolean) {
+        PhoneCamera.setConsent(on)   // false also stops the camera server right now
+        val s = SessionBus.snapshot.state
+        if (s !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
+            SessionService.start(this, if (on) SessionService.ACTION_CAMERA_APPLY else SessionService.ACTION_CAMERA_OFF)
+        } else if (on) {
+            Toast.makeText(this, "The phone camera will be available when the session starts", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun syncCamSwitch(on: Boolean) {
+        camSyncing = true
+        camSwitch.isChecked = on
+        camSyncing = false
+    }
+
     private fun syncMicSwitch(on: Boolean) {
         micSyncing = true
         micSwitch.isChecked = on
         micSyncing = false
     }
 
-    override fun onMicChanged() = syncMicSwitch(MicIn.consent)
+    override fun onMicChanged() { syncMicSwitch(MicIn.consent); syncCamSwitch(PhoneCamera.consent) }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CAMERA) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                syncCamSwitch(true); setCamera(true)
+            } else {
+                syncCamSwitch(false)
+                Toast.makeText(this, R.string.ld_camera_denied, Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode != REQ_MIC) return
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             syncMicSwitch(true); setMic(true)
@@ -219,6 +266,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         logText.text = SessionBus.logText()
         onState(SessionBus.snapshot)
         syncMicSwitch(MicIn.consent)
+        syncCamSwitch(PhoneCamera.consent)
     }
 
     override fun onStop() {

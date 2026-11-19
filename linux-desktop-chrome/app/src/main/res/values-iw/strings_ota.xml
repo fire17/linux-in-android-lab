@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OTA v1 Updates screen (K/ota/UpdatesActivity). -->
+<resources>
+    <string name="ld_ota_title">עדכונים</string>
+    <string name="ld_ota_check">בדיקה</string>
+    <string name="ld_ota_install">התקנה</string>
+    <string name="ld_ota_later">אחר כך</string>
+    <string name="ld_ota_auto_apply">החלה אוטומטית של עדכוני אורח (כבוי כברירת מחדל)</string>
+    <string name="ld_ota_ledger">היסטוריית עדכונים</string>
+    <string name="ld_ota_ledger_empty">אין עדכונים עדיין.</string>
+    <string name="ld_ota_status_fmt">אפליקציה %1$s · חבילת אורח %2$d (קודמת %3$d) %4$s</string>
+    <string name="ld_ota_trial">· בניסיון עד ההפעלה התקינה הבאה</string>
+    <string name="ld_ota_working">עובד …</string>
+    <string name="ld_ota_available">חבילה %1$d זמינה (%2$d קבצים, חתימה ✓). ההתקנה תוחל בהפעלה הבאה.</string>
+    <string name="ld_ota_up_to_date">מעודכן.</string>
+    <string name="ld_ota_installed">חבילה %1$d הותקנה. היא תיכנס לתוקף בהפעלה הבאה, ותבוטל אוטומטית אם ההפעלה לא תקינה.</string>
+    <string name="ld_ota_failed">העדכון נכשל: %1$s</string>
+</resources>

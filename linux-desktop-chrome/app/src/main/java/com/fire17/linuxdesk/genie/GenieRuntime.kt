@@ -232,6 +232,8 @@ object GenieRuntime {
         // PULSE_SERVER/PULSE_SINK when the guest PulseAudio runs (empty otherwise); cdp.py's _env passes them on to
         // the Chromium deskd launches (it strips only LINUXDESK_*).
         env += com.fire17.linuxdesk.audio.PulseHost.guestEnv()
+        // GPU v2 (experimental, OFF by default): Mesa zink/Turnip env; empty when off or after a software fallback.
+        env += com.fire17.linuxdesk.gpu.GpuSession.guestEnv()
         if (BuildConfig.DEBUG) env += "LINUXDESK_SELFTEST=1"      // device self-test batch (spec 02), debug builds only
         val flags = browserFlags
         if (withBrowser && flags != null) {
@@ -261,6 +263,12 @@ object GenieRuntime {
         try {
             proc.inputStream.bufferedReader().forEachLine { line ->
                 SessionBus.log(line)
+                // GPU v2: Chromium's GPU process crashed → software flags for this session, restart the browser once.
+                if (withBrowser && com.fire17.linuxdesk.gpu.GpuSession.onBrowserLine(line) &&
+                    com.fire17.linuxdesk.gpu.GpuSession.restartWanted()) {
+                    browserFlags = browserFlags?.let { com.fire17.linuxdesk.bridge.ChromiumFlags.withSoftwareFallback(it) }
+                    restartBrowser()
+                }
                 if (withBrowser && line.startsWith("LINUXDESK_WINDOW_UP") && !SessionBus.browserWindowUp) {
                     SessionBus.browserWindowUp = true
                     SessionBus.setState(SessionBus.State.RUNNING, "Running")

@@ -198,6 +198,12 @@ class Router(
                 v.startsWith("audio.mic") || v.startsWith("audio.record")
         }
 
+        /** camera.*, cam.* — never served over the link (the phone camera is the in-app switch only). */
+        fun isCameraVerb(verb: String): Boolean {
+            val v = verb.lowercase()
+            return v.startsWith("camera.") || v.startsWith("cam.")
+        }
+
         fun windowGated(verb: String, wide: Boolean): Boolean =
             if (wide) !verb.startsWith("sys.") && verb !in UNGATED else verb in SG_GATED
 
@@ -420,6 +426,8 @@ class Router(
             // Microphone to Linux is the person's in-app switch only ("only if I approve and turn it on").
             // No verb may start, stop, or query capture; refused before any gate, never relayed to deskd.
             isMicVerb(verb) -> done(err("denied", "the microphone can only be turned on in the LinuxDesk app"))
+            // Same rule for the phone camera: only the in-app switch "Phone camera for Linux" can turn it on.
+            isCameraVerb(verb) -> done(err("denied", "the camera can only be turned on in the LinuxDesk app"))
             else -> done(err("unknown_cmd", verb.take(64)))
         }
     }
