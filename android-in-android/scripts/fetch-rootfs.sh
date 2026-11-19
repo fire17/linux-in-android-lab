@@ -14,7 +14,7 @@ OUT="$ROOT/app/src/main/assets/rootfs"
 
 fetch "$BASE/aarch64/alpine-minirootfs-$V-aarch64.tar.gz" \
   4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de \
-  "$OUT/alpine-minirootfs-aarch64.tar.gz"
+  "$OUT/alpine-minirootfs-aarch64.rootfs.bin"
 fetch "$BASE/x86_64/alpine-minirootfs-$V-x86_64.tar.gz" \
   cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012 \
-  "$OUT/alpine-minirootfs-x86_64.tar.gz"
+  "$OUT/alpine-minirootfs-x86_64.rootfs.bin"

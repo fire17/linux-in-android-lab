@@ -59,6 +59,13 @@ jobs:
           APK=$(ls app/build/outputs/apk/debug/*.apk)
           ls -l "$APK"
           unzip -l "$APK" | grep -E 'lib/|assets/' || true
+          # Guard: the app opens rootfs/alpine-minirootfs-<arch>.rootfs.bin and gunzips it itself.
+          # AGP gunzips *.gz assets during packaging, so a .tar.gz name would land as .tar (it did in
+          # run 44518939858). Fail the build rather than ship an APK whose A2 rung can never pass.
+          unzip -l "$APK" | grep -E 'assets/rootfs/alpine-minirootfs-aarch64\.rootfs\.bin'
+          unzip -l "$APK" | grep -E 'assets/rootfs/alpine-minirootfs-x86_64\.rootfs\.bin'
+          unzip -p "$APK" assets/rootfs/alpine-minirootfs-aarch64.rootfs.bin | head -c 2 | od -An -tx1 | grep -q '1f 8b'
+          unzip -l "$APK" | grep -E 'assets/scrcpy-server\.jar'
 
       - uses: actions/upload-artifact@v7
         with:

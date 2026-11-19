@@ -241,7 +241,7 @@ class OnDeviceBackend(private val context: Context, private val runAvf: Boolean)
     private fun alpineAssetName(): String? {
         val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: return null
         val arch = when (abi) { "arm64-v8a" -> "aarch64"; "x86_64" -> "x86_64"; else -> return null }
-        val name = "rootfs/alpine-minirootfs-$arch.tar.gz"
+        val name = "rootfs/alpine-minirootfs-$arch.rootfs.bin"
         return try { context.assets.open(name).close(); name } catch (ignored: Throwable) { null }
     }
 
