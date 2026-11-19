@@ -19,7 +19,8 @@ echo "[setup] repositories:"; cat /etc/apk/repositories
 # dbus is optional. Chromium logs warnings without it but works.
 # font-misc-misc + font-cursor-misc: X core fonts ("fixed", "cursor"). lorie looks for them under
 #                   dirname(TMPDIR)/usr/share/fonts/X11. A stock X server aborts if it cannot open "fixed".
-PKGS="xkeyboard-config font-misc-misc font-cursor-misc font-dejavu font-noto-hebrew font-noto-emoji xdotool xwininfo xprop chromium"
+# python3:          runs /opt/linuxdesk/genie-daemon.py (genie access; stdlib only, no pip). python3 3.14.10-r1 (main).
+PKGS="xkeyboard-config font-misc-misc font-cursor-misc font-dejavu font-noto-hebrew font-noto-emoji xdotool xwininfo xprop chromium python3"
 
 attempt=1
 until apk update; do

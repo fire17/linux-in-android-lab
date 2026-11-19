@@ -27,9 +27,31 @@ fi
 /opt/linuxdesk/fit-window.sh &
 FIT=$!
 
+# Genie access (opt-in, OFF by default): Chromium exposes DevTools on 127.0.0.1:9222 and the genie
+# daemon (genie-daemon.py, key-authed) listens on 127.0.0.1:8765. Turn it on with the marker file
+# /etc/linuxdesk/genie-enabled (debug APK: `adb shell run-as com.fire17.linuxdesk touch
+# files/rootfs/etc/linuxdesk/genie-enabled`) or LINUXDESK_GENIE=1. Without it, this script runs
+# Chromium exactly as before. Caveat: the DevTools port itself has no auth, so any app on the phone
+# could drive the browser while genie access is on (spec 01 prefers --remote-debugging-pipe later).
+GENIE=""
+if [ "${LINUXDESK_GENIE:-0}" = "1" ] || [ -e /etc/linuxdesk/genie-enabled ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[genie] python3 missing, installing it (one time)"
+    apk add --no-progress python3 >/dev/null 2>&1 || echo "[genie] apk add python3 failed"
+  fi
+  set -- --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 "$@"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 /opt/linuxdesk/genie-daemon.py --port 8765 --cdp-port 9222 &
+    GENIE=$!
+  else
+    echo "[genie] daemon not started (no python3); DevTools is on 127.0.0.1:9222"
+  fi
+fi
+
 echo "[browser] exec $BIN $*"
 "$BIN" "$@"
 CODE=$?
 kill "$FIT" 2>/dev/null
+[ -n "$GENIE" ] && kill "$GENIE" 2>/dev/null
 echo "[browser] $BIN exited with code $CODE"
 exit $CODE

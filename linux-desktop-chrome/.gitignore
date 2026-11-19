@@ -19,3 +19,10 @@ app/src/main/assets/rootfs/
 gradle/wrapper/gradle-wrapper.jar
 gradlew
 gradlew.bat
+
+# Genie link: the genie-client token files (spec 01 §4 rule 7). Never commit.
+genie-client/**/*.json
+**/genie-client/**/*.json
+# Python bytecode from the shell lane's Mac test runs (would otherwise ship inside assets/linuxdesk/deskd).
+__pycache__/
+*.pyc

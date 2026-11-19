@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ld_genie_title">ג\'יני</string>
+    <string name="ld_genie_open">חיבור ג\'יני</string>
+    <string name="ld_genie_honesty">הג\'יני שלך יכול להריץ כל פקודה בתוך LinuxDesk ולשלוט בדפדפן שלו. אין לו גישה לאפליקציות אחרות, ואין לו הרשאות root של אנדרואיד. כדאי לחבר רק את הג\'יני שלך. אפשר לנתק אותו כאן בכל רגע.</string>
+
+    <string name="ld_genie_files_caveat">אם תיתן ל-LinuxDesk גם גישה לכל הקבצים, פקודה בתוך LinuxDesk עלולה לקרוא, לשנות או למחוק אותם בלי מסך הבדיקה. מחיקות שהג\'יני מבקש דרך LinuxDesk עצמו עדיין דורשות הקשה שלך.</string>
+    <string name="ld_genie_xor_turned_off">הגישה לג\'יני כובתה, כי ל-LinuxDesk יש גישה לכל הקבצים שלך וההגנה פועלת עכשיו.</string>
+
+    <string name="ld_genie_status_unpaired_off">אין ג\'יני מחובר. הגישה לג\'יני כבויה.</string>
+    <string name="ld_genie_status_unpaired_on">עוד אין ג\'יני מחובר. צריך לשלוח לג\'יני את הקוד.</string>
+    <string name="ld_genie_status_paired_off">יש ג\'יני מחובר. הגישה כבויה, אז הוא לא יכול להתחבר.</string>
+    <string name="ld_genie_status_paired_on">יש ג\'יני מחובר. הוא יכול להתחבר כל עוד LinuxDesk פועל.</string>
+
+    <string name="ld_genie_your_code">קוד החיבור שלך</string>
+    <string name="ld_genie_code_hint">הקוד עובד פעם אחת, למשך 30 דקות. אחרי 5 ניסיונות שגויים נוצר קוד חדש.</string>
+    <string name="ld_genie_share">שליחה לג\'יני שלי</string>
+    <string name="ld_genie_share_title">שליחה לג\'יני שלך</string>
+
+    <string name="ld_genie_paired_with">מחובר ל-%1$s</string>
+    <string name="ld_genie_paired_with_since">מחובר ל-%1$s מאז %2$s</string>
+    <string name="ld_genie_forget">לשכוח את הג\'יני שלי</string>
+    <string name="ld_genie_forget_q">לשכוח את הג\'יני הזה? הוא ינותק מיד, ולא יוכל להתחבר שוב עד שיחובר מחדש עם קוד חדש.</string>
+    <string name="ld_genie_forget_yes">לשכוח</string>
+
+    <string name="ld_genie_access">גישה לג\'יני</string>
+    <string name="ld_genie_access_help">כבוי כברירת מחדל. כשזה פועל, הג\'יני המחובר יכול להתחבר כל עוד הסשן של LinuxDesk פועל. הוא יכול לפעול כש-LinuxDesk על המסך, או היה על המסך ב-2 הדקות האחרונות (המתג למטה משנה את זה).</string>
+    <string name="ld_genie_reco_heading">המלצות (כבויות עד שתאשר)</string>
+    <string name="ld_genie_reco_help">ברירות המחדל עובדות כמו ב-Storage Genie. אלה כללים נוספים שאנחנו ממליצים עליהם. כל אחד מהם נשאר כבוי עד שתפעיל אותו.</string>
+    <string name="ld_genie_window_fgs">לאפשר כל עוד הסשן פועל — כבוי כברירת מחדל</string>
+    <string name="ld_genie_window_fgs_help">כבוי כברירת מחדל. כבוי: כמו ב-Storage Genie, הג\'יני יכול לפעול רק כש-LinuxDesk על המסך, או היה על המסך ב-2 הדקות האחרונות. פועל: הוא יכול לפעול כל עוד הסשן של LinuxDesk פועל, גם ברקע.</string>
+    <string name="ld_genie_refuse_locked">לסרב כשהטלפון נעול — כבוי כברירת מחדל</string>
+    <string name="ld_genie_refuse_locked_help">כבוי כברירת מחדל. פועל: הג\'יני לא יכול להריץ פקודות או להשתמש בעכבר ובמקלדת כשהטלפון נעול.</string>
+    <string name="ld_genie_xor_guard">גישה לכל הקבצים או גישה לג\'יני, לא שניהם — כבוי כברירת מחדל</string>
+    <string name="ld_genie_xor_guard_help">כבוי כברירת מחדל. פועל: אי אפשר להפעיל גישה לג\'יני כשיש ל-LinuxDesk גישה לכל הקבצים שלך, כדי שפקודה בתוך LinuxDesk לא תגיע לקבצים שלך בלי האישור שלך.</string>
+    <string name="ld_genie_local_link">מפתחים: חיבור מקומי</string>
+    <string name="ld_genie_local_link_help">‏כבוי כברירת מחדל. רק לבדיקות דרך USB: חיבור בכתובת ‎127.0.0.1:8766‎ (‎adb forward tcp:8766 tcp:8766‎). גם הוא דורש את החיבור לג\'יני.</string>
+
+    <string name="ld_genie_xor_title">קודם צריך לכבות את הגישה לכל הקבצים</string>
+    <string name="ld_genie_xor_message">ההגנה \"גישה לכל הקבצים או גישה לג\'יני, לא שניהם\" פועלת, ול-LinuxDesk יש גישה לכל הקבצים שלך. צריך לכבות את הגישה לכל הקבצים של LinuxDesk בהגדרות של אנדרואיד, או לכבות את ההגנה, ואז לנסות שוב.</string>
+
+    <string name="ld_genie_channel_events">ג\'יני</string>
+    <string name="ld_genie_channel_link">חיבור הג\'יני</string>
+    <string name="ld_genie_channel_confirm">ג\'יני: אישור מחיקות</string>
+    <string name="ld_genie_note_paired">מחובר ל-%1$s</string>
+    <string name="ld_genie_note_paired_text">אפשר להקיש כדי לראות אותו או לשכוח אותו.</string>
+    <string name="ld_genie_note_connected">הג\'יני מחובר</string>
+    <string name="ld_genie_note_connected_last">הג\'יני מחובר · פקודה אחרונה ב-%1$s</string>
+    <string name="ld_genie_stop">עצירת הג\'יני</string>
+    <string name="ld_genie_note_app_closed">הג\'יני רוצה להסתכל</string>
+    <string name="ld_genie_note_app_closed_text">צריך לפתוח את LinuxDesk כדי שהוא ימשיך.</string>
+    <string name="ld_genie_note_confirm_text">שום דבר לא יימחק בלי הקשה על אישור.</string>
+
+    <plurals name="ld_genie_note_suggest">
+        <item quantity="one">הג\'יני מציע למחוק קובץ אחד</item>
+        <item quantity="two">הג\'יני מציע למחוק %1$d קבצים</item>
+        <item quantity="many">הג\'יני מציע למחוק %1$d קבצים</item>
+        <item quantity="other">הג\'יני מציע למחוק %1$d קבצים</item>
+    </plurals>
+    <plurals name="ld_genie_note_confirm">
+        <item quantity="one">אישור: למחוק קובץ אחד (%2$s)</item>
+        <item quantity="two">אישור: למחוק %1$d קבצים (%2$s)</item>
+        <item quantity="many">אישור: למחוק %1$d קבצים (%2$s)</item>
+        <item quantity="other">אישור: למחוק %1$d קבצים (%2$s)</item>
+    </plurals>
+</resources>

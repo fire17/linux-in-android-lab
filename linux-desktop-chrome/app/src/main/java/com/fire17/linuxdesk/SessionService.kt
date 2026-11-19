@@ -17,6 +17,8 @@ import android.util.Log
 import com.fire17.linuxdesk.SessionBus.State
 import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.bridge.FocusBridge
+import com.fire17.linuxdesk.genie.GenieRuntime
+import com.fire17.linuxdesk.genie.GenieSettings
 import com.fire17.linuxdesk.linux.ProotRuntime
 import com.fire17.linuxdesk.linux.RootfsInstaller
 import com.fire17.linuxdesk.x11.X11ServerService
@@ -30,6 +32,8 @@ import java.io.File
  *   3. X server   bind X11ServerService, which starts lorie in the ":x11" process; wait for the socket
  *   4. display    LauncherActivity opens DesktopActivity, whose LorieView connects to the server
  *   5. browser    proot → /opt/linuxdesk/start-browser.sh <flags from DisplayMetrics> → chromium on DISPLAY=:0
+ *                 Genie access ON (default OFF): GenieRuntime runs proot → python3 deskd.py instead, and deskd
+ *                 launches the same start-browser.sh + flags as Chromium's parent (CDP over a pipe).
  *
  * The foreground service, plus a partial wake lock, keeps the X server and Chromium alive while the app is
  * in the background. Android 12+'s phantom-process killer is a separate, system-wide limit; see README.
@@ -101,6 +105,14 @@ class SessionService : Service() {
             }
             ACTION_RESTART_BROWSER -> Thread({ restartBrowser() }, "LinuxDeskRestart").start()
             ACTION_STOP -> stopSession()
+            GenieRuntime.ACTION_STOP_GENIE -> {
+                GenieRuntime.stopGenie(this)
+                if (worker?.isAlive == true || SessionBus.snapshot.state !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
+                    updateNotification()
+                } else {
+                    stopSelf()   // no session: the service was only created to handle this tap
+                }
+            }
         }
         return START_NOT_STICKY
     }
@@ -118,6 +130,9 @@ class SessionService : Service() {
             focusBridge?.stop()
             focusBridge = if (settings.autoKeyboard) FocusBridge().start() else null
             installer.installHelpers(focusBridge?.configJs())
+            // installHelpers copies assets/linuxdesk recursively (deskd/ included) but marks only its own three
+            // scripts executable; GenieRuntime runs setup-genie.sh by path, so it needs the bit too.
+            File(installer.rootfsDir, "opt/linuxdesk/setup-genie.sh").takeIf { it.isFile }?.setExecutable(true, false)
 
             val proot = ProotRuntime(this, settings.prootNoSeccomp)
             proot.preflight().forEach { SessionBus.log(it) }
@@ -146,7 +161,20 @@ class SessionService : Service() {
             }
             if (stopping) return
 
-            launchBrowser(proot)
+            // Genie access ON: GenieRuntime runs setup-genie.sh once, then deskd (fresh per-session key) becomes
+            // Chromium's parent with the SAME flags (CDP over a pipe), and returns true. Genie access OFF, or any
+            // genie failure: false, and the proven start-browser.sh path below runs exactly as before.
+            val flags = browserFlags()
+            val genieOwnsBrowser = try {
+                GenieRuntime.start(this, proot, flags, USE_SYSVIPC)
+            } catch (t: Throwable) {
+                Log.e(TAG, "genie start failed", t)
+                SessionBus.log("genie: start failed (${t.javaClass.simpleName}); using the normal browser path")
+                try { GenieRuntime.stop() } catch (_: Throwable) {}
+                false
+            }
+            if (stopping) return
+            if (genieOwnsBrowser) updateNotification() else launchBrowser(proot, flags)
         } catch (t: Throwable) {
             Log.e(TAG, "session failed", t)
             SessionBus.setState(State.ERROR, "${t.javaClass.simpleName}: ${t.message}")
@@ -162,7 +190,7 @@ class SessionService : Service() {
         if (!xBound) error("bindService(X11ServerService) returned false")
     }
 
-    private fun launchBrowser(proot: ProotRuntime) {
+    private fun browserFlags(): List<String> {
         val dm = resources.displayMetrics
         val locales = resources.configuration.locales
         val langs = (0 until locales.size()).joinToString(",") { locales[it].toLanguageTag() }
@@ -177,7 +205,10 @@ class SessionService : Service() {
             useGpu = settings.useGpu,
             acceptLanguages = langs,
         )
-        val flags = ChromiumFlags.build(params)
+        return ChromiumFlags.build(params)
+    }
+
+    private fun launchBrowser(proot: ProotRuntime, flags: List<String> = browserFlags()) {
         SessionBus.setState(State.STARTING_BROWSER, getString(R.string.ld_state_browser))
         SessionBus.log("chromium " + flags.joinToString(" "))
         SessionBus.browserWindowUp = false
@@ -206,8 +237,14 @@ class SessionService : Service() {
 
     private fun restartBrowser() {
         if (stopping) return
+        if (GenieRuntime.ownsBrowser && xBound) {
+            // deskd is Chromium's parent (Genie access ON): restart deskd, which restarts the browser.
+            GenieRuntime.restartBrowser()
+            return
+        }
         killBrowser()
         if (!xBound) {
+            try { GenieRuntime.stop() } catch (_: Throwable) {}
             SessionService.start(this, ACTION_START)
             return
         }
@@ -230,6 +267,7 @@ class SessionService : Service() {
         stopping = true
         SessionBus.setState(State.STOPPING, getString(R.string.ld_state_stopping))
         Thread {
+            try { GenieRuntime.stop() } catch (_: Throwable) {}
             killBrowser()
             focusBridge?.stop()
             focusBridge = null
@@ -247,6 +285,7 @@ class SessionService : Service() {
     override fun onDestroy() {
         if (!stopping) {
             stopping = true
+            try { GenieRuntime.stop() } catch (_: Throwable) {}
             killBrowser()
             focusBridge?.stop()
             if (xBound) try { unbindService(xConnection) } catch (_: Exception) {}
@@ -300,7 +339,7 @@ class SessionService : Service() {
             Intent(this, SessionService::class.java).setAction(ACTION_RESTART_BROWSER), flags)
         val stop = PendingIntent.getService(this, 2,
             Intent(this, SessionService::class.java).setAction(ACTION_STOP), flags)
-        return Notification.Builder(this, CHANNEL)
+        val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_desk)
             .setContentTitle(getString(R.string.ld_app_name))
             .setContentText(getString(R.string.ld_notification_text))
@@ -308,6 +347,11 @@ class SessionService : Service() {
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, getString(R.string.ld_restart_browser), restart).build())
             .addAction(Notification.Action.Builder(null, getString(R.string.ld_stop), stop).build())
-            .build()
+        // Spec 01 §4 rule 2: while a genie can connect, the session notification offers "Stop genie".
+        if (GenieSettings.genieAccess(this) || GenieSettings.localLink(this)) {
+            b.addAction(Notification.Action.Builder(null, getString(R.string.ld_genie_stop),
+                GenieRuntime.stopPendingIntent(this)).build())
+        }
+        return b.build()
     }
 }

@@ -13,6 +13,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Genie link, fs.* verbs (storage lane). Requested only when the person opens Storage; sideloaded APK only
+         (spec 02 #11). -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:name=".LinuxDeskApp"
@@ -69,6 +74,19 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a user-started Linux desktop session (X server + Chromium) alive while the user works in it." />
         </service>
+
+        <!-- Genie link (spec 01): pairing screen (pair lane) and the storage screen / delete review sheet (storage
+             lane). Neither is exported, so nothing outside the app can open the Approve sheet. -->
+        <activity
+            android:name=".genie.PairActivity"
+            android:exported="false"
+            android:label="@string/ld_genie_title" />
+
+        <activity
+            android:name=".storage.ReviewActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:label="Storage" />
 
         <!-- The embedded X server (libXlorie) runs in its own process, as DroidDesk does. Its native threads
              cannot be stopped cleanly, so the process is killed when the session ends. -->

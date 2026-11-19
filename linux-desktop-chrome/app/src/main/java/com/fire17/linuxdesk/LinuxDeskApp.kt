@@ -3,6 +3,8 @@ package com.fire17.linuxdesk
 import android.app.Application
 import android.content.Context
 import android.os.Build
+import com.fire17.linuxdesk.genie.GenieWindow
+import com.fire17.linuxdesk.storage.Proposals
 import com.termux.x11.LorieApp
 
 /**
@@ -15,8 +17,17 @@ import com.termux.x11.LorieApp
 class LinuxDeskApp : LorieApp() {
 
     override fun onCreate() {
-        if (isMainProcess()) seedLoriePreferences()
+        val main = isMainProcess()
+        if (main) seedLoriePreferences()
         super.onCreate()
+        // Genie link: Storage Genie's window rule (app on screen or within 2 min) counts this process's started
+        // activities. Without this every gated verb answers app_closed.
+        if (main) {
+            GenieWindow.install(this)
+            // Storage delete gate: after a process death, put half-finished proposals back in a safe state.
+            Thread({ try { Proposals.recover(this) } catch (_: Throwable) {} }, "ld-proposals-recover")
+                .apply { isDaemon = true; start() }
+        }
     }
 
     private fun isMainProcess(): Boolean =

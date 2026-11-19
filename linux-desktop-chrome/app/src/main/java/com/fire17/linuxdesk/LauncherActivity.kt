@@ -20,6 +20,8 @@ import android.widget.TextView
 import android.widget.Toast
 import com.fire17.linuxdesk.SessionBus.State
 import com.fire17.linuxdesk.bridge.ChromiumFlags
+import com.fire17.linuxdesk.genie.PairActivity
+import com.fire17.linuxdesk.storage.ReviewActivity
 
 /**
  * The setup and status screen. Start → SessionService does the work → as soon as the X server is coming
@@ -114,6 +116,12 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         findViewById<Button>(R.id.btn_restart_browser).setOnClickListener {
             settings.homeUrl = ChromiumFlags.normalizeUrl(url.text.toString())
             SessionService.start(this, SessionService.ACTION_RESTART_BROWSER)
+        }
+        findViewById<Button>(R.id.btn_genie).setOnClickListener {
+            startActivity(Intent(this, PairActivity::class.java))
+        }
+        findViewById<Button>(R.id.btn_storage).setOnClickListener {
+            startActivity(Intent(this, ReviewActivity::class.java))
         }
         findViewById<Button>(R.id.btn_dev_options).setOnClickListener {
             try {

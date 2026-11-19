@@ -190,6 +190,45 @@ workflow to the repo root and set `APP_DIR`).
    - very slow → keep "Slow-safe PRoot mode" **off**; try **App window** mode (fewer UI processes)
 6. Headless: `adb shell am start -n com.fire17.linuxdesk/.LauncherActivity --ez autostart true --es url https://example.com`
 
+## Genie link (LinuxDesk × Storage Genie, linuxdesk/1)
+
+A paired "genie" (your agent on a Mac or server) can drive this phone's LinuxDesk session. It can open pages,
+read the page tree, click and type in Chromium, run shell commands as the guest user or guest root, use the
+mouse and keyboard over X, take screenshots and frame streams, and use the Storage Genie file verbs (`fs.*`). The
+protocol and lane spec live outside this repo (`notes/spec/01-protocol-and-lanes.md`, `02-closing.md`).
+
+**How it is wired**
+- Launcher → **Pair a genie** opens the Pair screen. It shows a 6-char code, **Share with my genie** (the line
+  `LINUXDESK <node-id>:<CODE>`), **Forget my genie**, and the switches. Every switch is **OFF by default**.
+- **Genie access OFF** (the default): the session runs exactly as before (`start-browser.sh` straight from
+  `SessionService`).
+- **Genie access ON**: on the next Start, `GenieRuntime` runs `setup-genie.sh` once (marker
+  `/etc/linuxdesk/genie-v1`: python3, pillow, xwd, imagemagick, xdotool, and the guest user `desk`). It then
+  starts `python3 /opt/linuxdesk/deskd/deskd.py` under proot on `127.0.0.1:8765`, with a fresh random key each
+  session. deskd launches the **same** `start-browser.sh` and flags as Chromium's parent, with CDP over
+  `--remote-debugging-pipe` (no debugging port). The app holds the genie connection over iroh (ALPN
+  `linuxdesk/1`), checks the pairing, and relays the Linux verbs to deskd.
+- **Developer: local link ON**: the same router also listens on `127.0.0.1:8766`, for
+  `adb forward tcp:8766 tcp:8766` plus `genie-client pair --tcp 127.0.0.1:8766 --code ABC234`.
+- While a genie can connect, the session notification has **Stop genie**. Deletes always need an **Approve** tap
+  on the phone's review sheet; nothing else can trigger them.
+- Storage Genie behaviour is the default: genie commands work while the app is on screen or within 2 minutes of
+  it. All-files access and Genie shell may both be on. The agent's recommendations are switches that stay **OFF**
+  until you turn them on: "Allow while the session runs", "Refuse while locked", and "All-files XOR shell".
+- Honest caveat: `as:"root"` is proot's fake root inside Alpine, not Android root. The guest runs as the app's
+  uid, so shell access means control of the app's own sandbox, and with All-files access it may also reach
+  shared storage through `/proc`.
+
+**Verification status (honest, 2026-11-19)**
+| Item | Status |
+|---|---|
+| Kotlin wiring (manifest, launcher button, `SessionService` → `GenieRuntime`, `GenieWindow.install`) | Written and self-reviewed. **Not compiled** (no JDK or Android SDK on the Mac). The first CI build is the compile check. |
+| iroh-android 1.1.0 in the APK | Not built yet. ABIs checked on Maven only. |
+| deskd + genie-client | 32/32 tests pass **on the Mac**, including live Chrome over a real `--remote-debugging-pipe`. **Not run under proot or on Alpine Chromium.** |
+| `setup-genie.sh` under apk / proot | Syntax-checked only. |
+| Pairing, the window gate, fs verbs, the delete review sheet | Written. Unit tests are written but not run (no JDK). |
+| On-device tests: cdp-pipe, xwd cost, unix socket, xbox calibration, proc-root | **Pending.** Nothing has run on a phone. |
+
 ## Next steps (not done)
 
 - Bundle a Termux-prefix rebuild (`TERMUX_APP__PACKAGE_NAME=com.fire17.linuxdesk`) to replace proot: native speed, Chromium 157, zink GPU on Snapdragon.

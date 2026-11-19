@@ -68,6 +68,19 @@
             android:layout_height="wrap_content"
             android:text="@string/ld_restart_browser" />
 
+        <Button
+            android:id="@+id/btn_genie"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_open" />
+
+        <!-- Literal label: the strings files belong to other lanes; storage keeps its texts inline (ReviewActivity.S). -->
+        <Button
+            android:id="@+id/btn_storage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Storage" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

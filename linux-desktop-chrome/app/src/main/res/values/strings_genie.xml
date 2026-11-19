@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pair lane: the Pair screen and the genie notifications. Hebrew in values-iw/strings_genie.xml. -->
+<resources>
+    <string name="ld_genie_title">Genie</string>
+    <string name="ld_genie_open">Pair a genie</string>
+    <string name="ld_genie_honesty">Your genie can run any command inside LinuxDesk and control its browser. It cannot reach other apps, and it gets no Android root. Pair only your own genie. You can unpair it here at any time.</string>
+
+    <string name="ld_genie_files_caveat">If you also give LinuxDesk access to all your files, a command inside LinuxDesk may be able to read, change or delete them without the review screen. Deletes your genie asks for through LinuxDesk itself still need your tap.</string>
+    <string name="ld_genie_xor_turned_off">Genie access was turned off, because LinuxDesk has access to all your files and the guard is now on.</string>
+
+    <string name="ld_genie_status_unpaired_off">Not paired. Genie access is off.</string>
+    <string name="ld_genie_status_unpaired_on">Not paired yet. Send the code to your genie.</string>
+    <string name="ld_genie_status_paired_off">Paired. Genie access is off, so your genie cannot connect.</string>
+    <string name="ld_genie_status_paired_on">Paired. Your genie can connect while LinuxDesk runs.</string>
+
+    <string name="ld_genie_your_code">Your pairing code</string>
+    <string name="ld_genie_code_hint">The code works once, for 30 minutes. 5 wrong tries make a new code.</string>
+    <string name="ld_genie_share">Share with my genie</string>
+    <string name="ld_genie_share_title">Send to your genie</string>
+
+    <string name="ld_genie_paired_with">Paired with %1$s</string>
+    <string name="ld_genie_paired_with_since">Paired with %1$s since %2$s</string>
+    <string name="ld_genie_forget">Forget my genie</string>
+    <string name="ld_genie_forget_q">Forget this genie? It is disconnected right away and cannot connect again until you pair it with a new code.</string>
+    <string name="ld_genie_forget_yes">Forget</string>
+
+    <string name="ld_genie_access">Genie access</string>
+    <string name="ld_genie_access_help">Off by default. When on, your paired genie can connect while the LinuxDesk session runs. It can act while LinuxDesk is on screen, or was within the last 2 minutes (the switch below changes this).</string>
+    <string name="ld_genie_reco_heading">Recommendations (off until you approve)</string>
+    <string name="ld_genie_reco_help">The defaults work like Storage Genie. These are extra rules we recommend. Each one stays off until you turn it on.</string>
+    <string name="ld_genie_window_fgs">Allow while the session runs — off by default</string>
+    <string name="ld_genie_window_fgs_help">Off by default. Off: like Storage Genie, your genie can act only while LinuxDesk is on screen, or was within the last 2 minutes. On: it can act whenever the LinuxDesk session runs, also in the background.</string>
+    <string name="ld_genie_refuse_locked">Refuse while locked — off by default</string>
+    <string name="ld_genie_refuse_locked_help">Off by default. On: your genie cannot run commands or use the mouse and keyboard while the phone is locked.</string>
+    <string name="ld_genie_xor_guard">All-files access or Genie access, not both — off by default</string>
+    <string name="ld_genie_xor_guard_help">Off by default. On: Genie access cannot be turned on while LinuxDesk has access to all your files, so a command inside LinuxDesk cannot reach your files without your approval.</string>
+    <string name="ld_genie_local_link">Developer: local link</string>
+    <string name="ld_genie_local_link_help">Off by default. For testing over USB only: a link on 127.0.0.1:8766 (adb forward tcp:8766 tcp:8766). It still needs your pairing.</string>
+
+    <string name="ld_genie_xor_title">Turn off All-files access first</string>
+    <string name="ld_genie_xor_message">The \"All-files access or Genie access, not both\" guard is on, and LinuxDesk has access to all your files. Turn off All-files access for LinuxDesk in Android Settings, or turn the guard off, then try again.</string>
+
+    <string name="ld_genie_channel_events">Genie</string>
+    <string name="ld_genie_channel_link">Genie connection</string>
+    <string name="ld_genie_channel_confirm">Genie: confirm deletes</string>
+    <string name="ld_genie_note_paired">Paired with %1$s</string>
+    <string name="ld_genie_note_paired_text">Tap to see it, or to forget it.</string>
+    <string name="ld_genie_note_connected">Genie connected</string>
+    <string name="ld_genie_note_connected_last">Genie connected · last command %1$s</string>
+    <string name="ld_genie_stop">Stop genie</string>
+    <string name="ld_genie_note_app_closed">Your genie wants to look</string>
+    <string name="ld_genie_note_app_closed_text">Open LinuxDesk to let it continue.</string>
+    <string name="ld_genie_note_confirm_text">Nothing is deleted until you tap Approve.</string>
+
+    <plurals name="ld_genie_note_suggest">
+        <item quantity="one">Your genie suggests deleting %1$d file</item>
+        <item quantity="other">Your genie suggests deleting %1$d files</item>
+    </plurals>
+    <plurals name="ld_genie_note_confirm">
+        <item quantity="one">Confirm: delete %1$d file (%2$s)</item>
+        <item quantity="other">Confirm: delete %1$d files (%2$s)</item>
+    </plurals>
+</resources>

@@ -46,6 +46,14 @@ android {
     }
 
     packaging {
+        resources {
+            // iroh-ffi ships JNA desktop binaries inside the AAR that Android never loads (as Storage Genie does).
+            excludes += setOf(
+                "/win32-x86-64/**", "/win32-x86/**",
+                "/darwin-aarch64/**", "/darwin-x86-64/**", "/darwin/**",
+                "/linux-x86-64/**", "/linux-aarch64/**", "/linux-arm/**",
+            )
+        }
         jniLibs {
             // REQUIRED: the installer must extract libproot.so & co. to nativeLibraryDir as real files
             // (extractNativeLibs=true). Otherwise those "executables" stay inside the APK and cannot be exec'd.
@@ -80,7 +88,13 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.preference:preference:1.2.1")
 
+    // The genie link, phase B (spec 01 §2): iroh endpoint with ALPN "linuxdesk/1". The same artifact Storage
+    // Genie ships; the genie side uses pip iroh==1.1.0. Brings JNA + kotlinx-coroutines at runtime scope.
+    implementation("computer.iroh:iroh-android:1.1.0")
+
     testImplementation("junit:junit:4.13.2")
+    // android.jar's org.json is a stub on the JVM (returns defaults); FrameTest/RouterTest need the real one.
+    testImplementation("org.json:json:20231013")
 }
 
 // ---------------------------------------------------------------------------------------------

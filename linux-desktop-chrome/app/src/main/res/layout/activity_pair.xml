@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pair screen (pair lane, spec 01 §1.2 + §4). Same plain style as activity_launcher.xml. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_title"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <!-- The honesty text (spec 01 §4 rule 5). Always visible. -->
+        <TextView
+            android:id="@+id/genie_honesty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:padding="10dp"
+            android:background="#22FFAA00"
+            android:text="@string/ld_genie_honesty"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/genie_files_caveat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:padding="10dp"
+            android:background="#22FFAA00"
+            android:text="@string/ld_genie_files_caveat"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/genie_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="10dp"
+            android:background="#22888888"
+            android:textSize="14sp" />
+
+        <!-- Not paired: the code and the Share button. -->
+        <LinearLayout
+            android:id="@+id/genie_unpaired"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/ld_genie_your_code"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/genie_code"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.15"
+                android:padding="12dp"
+                android:background="#221A73E8"
+                android:textDirection="ltr"
+                android:textSize="34sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/ld_genie_code_hint"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/genie_share"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/ld_genie_share" />
+        </LinearLayout>
+
+        <!-- Paired: who, since when, and Forget. -->
+        <LinearLayout
+            android:id="@+id/genie_paired"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/genie_who"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/genie_forget"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/ld_genie_forget"
+                android:textColor="#FFFF6B6B" />
+        </LinearLayout>
+
+        <Switch
+            android:id="@+id/genie_access"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/ld_genie_access"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_access_help"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/genie_reco_heading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/ld_genie_reco_heading"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_reco_help"
+            android:textSize="12sp" />
+
+        <Switch
+            android:id="@+id/genie_window_fgs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/ld_genie_window_fgs"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_window_fgs_help"
+            android:textSize="12sp" />
+
+        <Switch
+            android:id="@+id/genie_refuse_locked"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/ld_genie_refuse_locked"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_refuse_locked_help"
+            android:textSize="12sp" />
+
+        <Switch
+            android:id="@+id/genie_xor_guard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/ld_genie_xor_guard"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_xor_guard_help"
+            android:textSize="12sp" />
+
+        <Switch
+            android:id="@+id/genie_local_link"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/ld_genie_local_link"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_genie_local_link_help"
+            android:textDirection="locale"
+            android:textSize="12sp" />
+    </LinearLayout>
+</ScrollView>
