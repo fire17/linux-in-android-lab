@@ -178,6 +178,8 @@ class SessionService : Service() {
             installer.installHelpers(focusBridge?.configJs())
             // Phone camera: start the loopback MJPEG server only if the switch is ON, then write the extension's
             // config.js (port + token, or port 0 = off) before Chromium starts.
+            // Camera always on, like the mic (Tami 2026-11-20): re-arm consent each session if permission exists.
+            if (settings.cameraAlwaysOn && PhoneCamera.hasPermission(this)) PhoneCamera.setConsent(true)
             if (PhoneCamera.consent) PhoneCamera.start(this)
             PhoneCamera.writeConfig(installer.rootfsDir)
             // Cameras v4: every session start puts the camera inventory into the session log (→ sys.logs, Share logs).

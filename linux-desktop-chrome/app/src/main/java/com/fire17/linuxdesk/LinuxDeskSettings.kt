@@ -18,7 +18,7 @@ class LinuxDeskSettings(context: Context) {
 
     /** Percent of the Android density used as Chromium's device scale factor (100 = same size as Android UI). */
     var scalePercent: Int
-        get() = p.getInt("scalePercent", 100)
+        get() = p.getInt("scalePercent", 50)   // Tami 2026-11-20 (AC A1FB96): 50% is the default
         set(v) = p.edit().putInt("scalePercent", v).apply()
 
     /** Experimental: pop the soft keyboard when a web text field gets focus (bundled Chromium extension). */
@@ -69,6 +69,15 @@ class LinuxDeskSettings(context: Context) {
      * mic feeds Linux only while a LinuxDesk screen is on, and is released at once when the app leaves the screen,
      * so WhatsApp and other apps can record. ON = the old behaviour (capture continues from the foreground service).
      */
+    /**
+     * Phone camera for Linux, kept ON across sessions like the mic. Tami (screenshot 2026-11-20 00:35): "make sure that
+     * all these settings are default". The session turns the camera server on by itself at Start once CAMERA was
+     * granted once; the switch still turns it OFF, and the genie still cannot turn it on.
+     */
+    var cameraAlwaysOn: Boolean
+        get() = p.getBoolean("camera_always_on", true)
+        set(v) = p.edit().putBoolean("camera_always_on", v).apply()
+
     var micInBackground: Boolean
         get() = p.getBoolean("mic_in_background", false)
         set(v) = p.edit().putBoolean("mic_in_background", v).apply()
@@ -84,7 +93,7 @@ class LinuxDeskSettings(context: Context) {
 
     /** Off by default: inside proot there is no GPU device, so Chromium uses software compositing. */
     var useGpu: Boolean
-        get() = p.getBoolean("useGpu", false)
+        get() = p.getBoolean("useGpu", true)   // Tami 2026-11-20: GPU on by default; a GPU crash pins software (0.2.26)
         set(v) = p.edit().putBoolean("useGpu", v).apply()
 
     /**

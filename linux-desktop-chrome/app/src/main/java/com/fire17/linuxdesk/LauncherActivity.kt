@@ -172,6 +172,8 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             if (PhoneCamera.running) SessionService.start(this, SessionService.ACTION_CAMERA_APPLY)
         }
         camSwitch = findViewById(R.id.opt_camera)
+        // Always on, like the mic (Tami 2026-11-20): arm consent now if permission was already granted.
+        if (settings.cameraAlwaysOn && PhoneCamera.hasPermission(this) && !PhoneCamera.consent) PhoneCamera.setConsent(true)
         camSwitch.isChecked = PhoneCamera.consent
         camSwitch.setOnCheckedChangeListener { _, on ->
             if (camSyncing) return@setOnCheckedChangeListener
@@ -248,6 +250,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
 
     private fun setCamera(on: Boolean) {
         PhoneCamera.setConsent(on)   // false also stops the camera server right now
+        settings.cameraAlwaysOn = on   // remembered across sessions, like the mic
         val s = SessionBus.snapshot.state
         if (s !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
             SessionService.start(this, if (on) SessionService.ACTION_CAMERA_APPLY else SessionService.ACTION_CAMERA_OFF)
