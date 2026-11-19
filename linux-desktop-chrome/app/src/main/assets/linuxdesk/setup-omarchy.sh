@@ -225,7 +225,51 @@ apps_main() {
   fi
   return 0
 }
+
+# 9. Omarchy (Sway) desktop (opt-in, experimental) -----------------------------------------------------------------
+# Only when /etc/linuxdesk/desktop is `sway` (the launcher's "Omarchy (Sway)" choice; notes/sway-desktop-plan.md).
+# Never installed for i3 users. Stock ALARM packages, ~15 MB / 57 packages (measured 2026-11-19, Exp B0); wofi is the
+# launcher (Omarchy 3's walker is not in ALARM). Never fatal: it runs after the omarchy-v1 marker, so the i3 desktop
+# works whatever happens here, and a run without its marker (/etc/linuxdesk/sway-v1 = SWAY_REV) is retried by the next
+# `setup-omarchy.sh sway`. Not under `set -e` (it runs in a `||` list), so every step checks for itself.
+# `sway_main wait` (the `sway` subcommand) waits up to 20 min for memory like the apps stage; the first-run setup only
+# checks once and skips (it must not hold the setup screen for 20 minutes).
+SWAY_REV=1
+SWAY_PKGS="sway waybar foot mako xorg-xwayland swaybg wofi"
+sway_main() {
+  [ "$(cat "$MARK/desktop" 2>/dev/null || true)" = sway ] || return 0
+  [ "$(cat "$MARK/sway-v1" 2>/dev/null || true)" = "$SWAY_REV" ] && { log "sway: already installed"; return 0; }
+  if [ "${1:-}" = wait ]; then
+    wait_for_mem "$APPS_MEM_KB" || { log "sway: memory still low after 20 min (avail $AVAIL_MB MB, swap $SWAP_MB MB); next Start retries"; return 1; }
+  elif ! mem_ok "$APPS_MEM_KB"; then
+    log "sway: memory low (avail $AVAIL_MB MB, swap $SWAP_MB MB); skipped, the next Start installs it"; return 1
+  fi
+  # Another pacman (apps stage, genie, GPU setup) may hold the lock: wait for it, up to 10 minutes.
+  w=0
+  while [ -e "$PACMAN_LCK" ] && command -v pgrep >/dev/null 2>&1 && pgrep -x pacman >/dev/null 2>&1 && [ "$w" -lt 120 ]; do
+    sleep 5; w=$((w + 1))
+  done
+  attempt=1
+  until pacman -Syy --noconfirm; do
+    if [ "$attempt" -ge 3 ]; then log "sway: pacman -Syy failed 3 times (no network?)"; return 1; fi
+    attempt=$((attempt + 1)); log "sway: retrying pacman -Syy in 5s"; sleep 5
+  done
+  log "sway: installing $SWAY_PKGS"
+  # shellcheck disable=SC2086  # one package name per word, intended
+  pacman -S --needed --noconfirm $SWAY_PKGS || { sleep 3; pacman -Syy --noconfirm; pacman -S --needed --noconfirm $SWAY_PKGS; } \
+    || log "sway: pacman reported errors (often harmless hook failures under PRoot); verifying ..."
+  pacman -Scc --noconfirm >/dev/null 2>&1 || true
+  missing=""
+  for b in sway waybar foot mako swaybg wofi Xwayland; do command -v "$b" >/dev/null 2>&1 || missing="$missing $b"; done
+  [ -z "$missing" ] || { log "sway: missing after install:$missing; next Start retries"; return 1; }
+  python3 /opt/linuxdesk/omarchy/sway-theme.py "$(cat "$MARK/omarchy-theme" 2>/dev/null || echo tokyo-night)" \
+    || log "sway: note: theme render failed; sway uses its defaults"
+  echo "$SWAY_REV" > "$MARK/sway-v1"
+  log "sway: done: $(sway --version 2>/dev/null | head -1)"
+  return 0
+}
 if [ "${1:-}" = apps ]; then apps_main; exit 0; fi
+if [ "${1:-}" = sway ]; then sway_main wait || exit 1; exit 0; fi
 
 log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m)"
 
@@ -394,3 +438,5 @@ command -v pulseaudio >/dev/null 2>&1 && echo "pulseaudio libpulse" > /etc/linux
 echo "$PKGS $BIN" > /etc/linuxdesk/omarchy-v1
 mark_done
 log "done: $($BIN --version 2>/dev/null || echo "$BIN"), $(i3 --version 2>/dev/null | head -1)"
+# Opt-in sway desktop (stage 9 above): after the final marker, and never fails the setup.
+sway_main || log "sway: not installed this run (the i3 desktop is unaffected)"

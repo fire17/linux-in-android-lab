@@ -247,8 +247,9 @@ object GenieRuntime {
         if (BuildConfig.DEBUG) env += "LINUXDESK_SELFTEST=1"      // device self-test batch (spec 02), debug builds only
         val flags = browserFlags
         if (withBrowser && flags != null) {
-            // start-browser.sh (Alpine) or start-omarchy.sh (Omarchy: i3 + Chrome); same argv contract.
-            env += "LINUXDESK_BROWSER_CMD=${p.distro.startScript}"
+            // start-browser.sh (Alpine), start-omarchy.sh (Omarchy: i3 + Chrome) or start-sway.sh (Omarchy, Sway
+            // desktop); same argv contract.
+            env += "LINUXDESK_BROWSER_CMD=${p.startScript}"
             env += "LINUXDESK_BROWSER_FLAGS=" + JSONArray(flags).toString()
         }
         val proc = try {

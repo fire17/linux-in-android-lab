@@ -293,7 +293,7 @@ class SessionService : Service() {
         SessionBus.browserWindowUp = false
 
         // PulseHost.guestEnv() is empty when PulseAudio is not running, so Chromium then starts exactly as before.
-        val p = proot.start(listOf(proot.distro.startScript) + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv() + GpuSession.guestEnv(), sysvipc = USE_SYSVIPC)
+        val p = proot.start(listOf(proot.startScript) + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv() + GpuSession.guestEnv(), sysvipc = USE_SYSVIPC)
         browser = p
         Thread({
             try {

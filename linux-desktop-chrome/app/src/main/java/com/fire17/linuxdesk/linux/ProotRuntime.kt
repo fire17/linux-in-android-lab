@@ -36,6 +36,8 @@ class ProotRuntime(
     val nativeLibDir: File get() = File(context.applicationInfo.nativeLibraryDir)
     val prootBinary: File get() = File(nativeLibDir, "libproot.so")
     val rootfsDir: File get() = distro.rootfsDir(context)
+    /** The session launcher: [Distro.startScript], or start-sway.sh for Omarchy with the Sway desktop ([Desktop]). */
+    val startScript: String get() = Desktop.startScript(distro, Desktop.current(context))
     private val tmpDir: File get() = File(context.filesDir, "proot-tmp").apply { mkdirs() }
     private val l2sDir: File get() = File(context.filesDir, "proot-l2s").apply { mkdirs() }
     private val shmDir: File get() = File(rootfsDir, "tmp/shm").apply { mkdirs() }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sway lane: the Omarchy desktop choice in the launcher (K/linux/Desktop.kt). -->
+<resources>
+    <string name="ld_desktop_sway">Omarchy desktop: Sway (experimental)</string>
+</resources>

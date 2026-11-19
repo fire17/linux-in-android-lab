@@ -25,6 +25,7 @@ import com.fire17.linuxdesk.audio.MicIn
 import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.camera.PhoneCamera
 import com.fire17.linuxdesk.genie.PairActivity
+import com.fire17.linuxdesk.linux.Desktop
 import com.fire17.linuxdesk.linux.Distro
 import com.fire17.linuxdesk.storage.ReviewActivity
 
@@ -44,6 +45,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
     private lateinit var stopBtn: Button
     private lateinit var rootfsProgress: ProgressBar
     private lateinit var distroGroup: RadioGroup
+    private lateinit var swayBox: CheckBox
     private var autoOpened = false
     private lateinit var micSwitch: Switch
     private var micSyncing = false
@@ -81,8 +83,14 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         // Alpine is the default and the only choice on x86_64 (Arch Linux ARM is aarch64 only).
         findViewById<View>(R.id.distro_omarchy).isEnabled = Distro.omarchySupported()
         distroGroup.check(if (Distro.current(this) == Distro.OMARCHY) R.id.distro_omarchy else R.id.distro_alpine)
+        // Sway lane: Omarchy's desktop (i3 default, sway experimental); only meaningful while Omarchy is selected.
+        swayBox = findViewById(R.id.desktop_sway)
+        swayBox.isChecked = Desktop.current(this) == Desktop.SWAY
+        swayBox.isEnabled = Distro.current(this) == Distro.OMARCHY
+        swayBox.setOnCheckedChangeListener { _, on -> Desktop.set(this, if (on) Desktop.SWAY else Desktop.I3) }
         distroGroup.setOnCheckedChangeListener { _, id ->
             Distro.set(this, if (id == R.id.distro_omarchy) Distro.OMARCHY else Distro.ALPINE)
+            swayBox.isEnabled = id == R.id.distro_omarchy
         }
 
         val url = findViewById<EditText>(R.id.url)
@@ -318,6 +326,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             val c = distroGroup.getChildAt(i)
             c.isEnabled = idle && (c.id != R.id.distro_omarchy || Distro.omarchySupported())
         }
+        swayBox.isEnabled = idle && Distro.current(this) == Distro.OMARCHY
         val pct = SessionBus.downloadPercent
         rootfsProgress.visibility = if (s.state == State.INSTALLING_ROOTFS && pct in 0..100) View.VISIBLE else View.GONE
         if (pct in 0..100) rootfsProgress.progress = pct

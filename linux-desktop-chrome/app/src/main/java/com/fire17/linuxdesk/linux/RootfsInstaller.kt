@@ -116,10 +116,14 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
         copyAssetDir("linuxdesk", dest)
         com.fire17.linuxdesk.ota.BundleStore(context.filesDir, com.fire17.linuxdesk.BuildConfig.VERSION_CODE.toLong(), com.fire17.linuxdesk.BuildConfig.VERSION_NAME).overlayActive(dest) // OTA v1: signed ota/active over APK assets (no-op when none)
         for (n in listOf("start-browser.sh", "fit-window.sh", "setup-packages.sh",
-                "setup-omarchy.sh", "start-omarchy.sh", "setup-genie-arch.sh")) {
+                "setup-omarchy.sh", "start-omarchy.sh", "start-sway.sh", "setup-genie-arch.sh")) {
             File(dest, n).takeIf { it.isFile }?.setExecutable(true, false)
         }
         if (focusBridgeConfigJs != null) File(dest, "focus-bridge/config.js").writeText(focusBridgeConfigJs)
+        // Omarchy: setup-omarchy.sh / start scripts read the desktop choice (i3|sway) from /etc/linuxdesk/desktop.
+        if (distro == Distro.OMARCHY) {
+            File(rootfsDir, Desktop.GUEST_FILE).apply { parentFile?.mkdirs() }.writeText(Desktop.current(context).id + "\n")
+        }
     }
 
     private fun copyAssetDir(assetPath: String, dest: File) {
@@ -132,8 +136,12 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
         for (c in children) copyAssetDir("$assetPath/$c", File(dest, c))
     }
 
-    /** True once the distro's package script (setup-packages.sh / setup-omarchy.sh) has completed in this rootfs. */
-    fun packagesInstalled(): Boolean = File(rootfsDir, distro.packagesMarker).isFile
+    /**
+     * True once the distro's package script (setup-packages.sh / setup-omarchy.sh) has completed in this rootfs.
+     * Omarchy with the Sway desktop also needs setup-omarchy.sh's sway marker, so switching i3 → sway re-runs setup.
+     */
+    fun packagesInstalled(): Boolean = File(rootfsDir, distro.packagesMarker).isFile &&
+        (distro != Distro.OMARCHY || Desktop.current(context) != Desktop.SWAY || File(rootfsDir, Desktop.SWAY_MARKER).isFile)
 
     companion object { private const val TAG = "RootfsInstaller" }
 }

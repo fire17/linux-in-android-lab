@@ -71,6 +71,15 @@
                 android:text="Omarchy (Arch Linux ARM: Chrome + i3 with Omarchy's look; first run downloads ~1.6 GB and needs ~4 GB free)" />
         </RadioGroup>
 
+        <!-- Sway lane, experimental and OFF by default: Omarchy runs sway instead of i3 (K/linux/Desktop.kt). -->
+        <CheckBox
+            android:id="@+id/desktop_sway"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/ld_desktop_sway" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
