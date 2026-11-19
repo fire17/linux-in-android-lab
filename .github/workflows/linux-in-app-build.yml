@@ -56,17 +56,21 @@ jobs:
       - name: Check native libs are packaged uncompressed-extractable
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
+          echo "--- every asset packaged in the APK ---"
+          unzip -l "$APK" | grep -E ' assets/' || echo "NO assets/ entries in APK"
+          echo "---------------------------------------"
           unzip -l "$APK" | grep -E 'lib/(arm64-v8a|x86_64)/lib(proot|proot_loader|talloc|android-shmem)\.so'
           unzip -l "$APK" | grep -E 'assets/rootfs/alpine-(aarch64|x86_64)\.tar\.gz'
           "$ANDROID_HOME"/build-tools/36.0.0/aapt2 dump xmltree --file AndroidManifest.xml "$APK" | grep -i extractNativeLibs || true
           sha256sum "$APK"
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: LinuxInApp-debug-apk
           path: ${{ env.APP_DIR }}/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          if-no-files-found: warn
 
   # Best-effort on-device proof: boots an x86_64 emulator and runs the same self-test as the
   # in-app button (uname/os-release/id under proot). Non-blocking: the APK artifact above is the
