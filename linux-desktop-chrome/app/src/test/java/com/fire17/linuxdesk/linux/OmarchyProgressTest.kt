@@ -90,7 +90,7 @@ class OmarchyProgressTest {
         assertEquals(0, s.stageIndex)
         assertTrue(s.error, s.error.startsWith("error: failed retrieving file") && s.error.contains("404"))
         // Download band ended at 35, unpack band at 44 (the extractor's last "N files…" line was 22800 of ~25k).
-        assertEquals(35, seen.first { it.phase == Phase.EXTRACT }.percent - 0.coerceAtLeast(0) - 0 - (seen.first { it.phase == Phase.EXTRACT }.percent - 35))
+        assertEquals(35, seen.first { it.phase == Phase.EXTRACT }.percent)
         assertEquals(44, seen.last { it.phase == Phase.EXTRACT }.percent)
     }
 

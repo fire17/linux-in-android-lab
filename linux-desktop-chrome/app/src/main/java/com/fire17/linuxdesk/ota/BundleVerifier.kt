@@ -23,8 +23,8 @@ import java.util.Base64
  *
  * Ed25519: uses the platform `Signature.getInstance("Ed25519")` (JDK 15+; Android API 33+ via Conscrypt — Tami's phone
  * is API 35). On API 26–32 the platform provider is UNVERIFIED/likely absent: [verify] then returns
- * [Result.Rejected] with reason `NO_ED25519_PROVIDER` (fail closed — never accept). Fallback plan for old APIs: bundle a
- * BouncyCastle-free pure-Java Ed25519 verifier (e.g. Tink's `Ed25519Verify`, Apache-2.0) — not done in v1.
+ * falls back to [Ed25519Pure] (RFC 8032 reference verify, no dependency; round 4). With the fallback disabled it
+ * returns [Result.Rejected] `NO_ED25519_PROVIDER` (fail closed — never accept).
  */
 object BundleVerifier {
 
@@ -144,6 +144,15 @@ object BundleVerifier {
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     /** Returns true/false, or null if the platform has no Ed25519 provider. */
+    /** Test seam: false restores the round-1 fail-closed behaviour (null = no provider). */
+    @Volatile var allowPureFallback = true
+
+    /** The pure verifier on its own (used by tests to compare against the platform on the same bundle). */
+    fun verifyEd25519Pure(pubKeyB64: String, data: ByteArray, sig: ByteArray): Boolean {
+        val raw = try { Base64.getDecoder().decode(pubKeyB64.trim()) } catch (e: IllegalArgumentException) { return false }
+        return raw.size == 32 && Ed25519Pure.verify(raw, data, sig)
+    }
+
     fun verifyEd25519(pubKeyB64: String, data: ByteArray, sig: ByteArray): Boolean? {
         val raw = try {
             Base64.getDecoder().decode(pubKeyB64.trim())
@@ -159,7 +168,8 @@ object BundleVerifier {
             s.update(data)
             s.verify(sig)
         } catch (e: java.security.NoSuchAlgorithmException) {
-            null
+            // API 26–32: no platform Ed25519 → the pure RFC 8032 verifier (same key, same bytes, same answer).
+            if (allowPureFallback) Ed25519Pure.verify(raw, data, sig) else null
         } catch (e: java.security.GeneralSecurityException) {
             false
         }

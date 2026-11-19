@@ -9,6 +9,10 @@
 // Transport per stream: "direct" = <img src=http://127.0.0.1:PORT/stream?t=TOKEN&cam=ID> (fast); if that fails
 // (Chromium Local Network Access, mixed content, CSP img-src…) → "relay" = the extension service worker fetches the
 // MJPEG and relays JPEG frames (decoded with createImageBitmap). Audio always goes to the real getUserMedia.
+//
+// v3: relay-only privacy mode (setting, default OFF): the state this script gets has no port/token, so it never
+// builds a 127.0.0.1 URL and every frame comes through the service worker. OFF mid-session: bg.js pushes the new
+// state → every live phone-camera track ends (readyState "ended" + an "ended" event) and devicechange fires.
 (() => {
   "use strict";
   const boot = (typeof __LINUXDESK_CAM__ === "object" && __LINUXDESK_CAM__) || {};
@@ -27,7 +31,9 @@
   const waiters = new Map();
   window.addEventListener("message", (ev) => {
     const m = ev.data;
-    if (ev.source !== window || !m || m.__ldcam !== "res") return;
+    if (ev.source !== window || !m) return;
+    if (m.__ldcam === "push") { onPush(m.state); return; }
+    if (m.__ldcam !== "res") return;
     const w = waiters.get(m.id);
     if (w) w(m);
   });
@@ -45,7 +51,8 @@
     });
   }
 
-  const bootState = () => (boot.enabled !== false && boot.port && boot.token)
+  // Without the bridge (e.g. a sandboxed frame) only config.js is left: direct mode only, never in relay-only.
+  const bootState = () => (!boot.relayOnly && boot.enabled !== false && boot.port && boot.token)
     ? { enabled: true, port: boot.port, token: boot.token, ask: !!boot.ask,
         cams: [{ id: "", label: "Phone camera", facing: "back", width: 1280, height: 720 }] }
     : { enabled: false, cams: [] };
@@ -56,7 +63,26 @@
     const r = await request("state", null, null, 1500);
     cached = (r && r.state) ? r.state : bootState();   // no bridge (e.g. sandboxed frame): fall back to config.js
     cachedAt = Date.now();
+    noteState(cached);
     return cached;
+  }
+
+  // ---------------------------------------------------------------- live tracks + state changes
+  const live = new Set();          // {track, end(reason)} of every running phone-camera track in this frame
+  let lastKey = null;
+  const keyOf = (st) => st && st.enabled ? (st.relayOnly ? "R" : "D") + ":" + (st.cams || []).map(c => c.id).join(",") : "off";
+  function noteState(st) {
+    const key = keyOf(st);
+    const changed = lastKey !== null && key !== lastKey;
+    lastKey = key;
+    if (!changed) return;
+    if (!st || !st.enabled) for (const t of [...live]) t.end("off");   // OFF: end every live track at once
+    try { md.dispatchEvent(new Event("devicechange")); } catch (_) {}
+  }
+  function onPush(st) {
+    if (!st) return;
+    cached = st; cachedAt = Date.now();
+    noteState(st);
   }
 
   // ---------------------------------------------------------------- devices
@@ -130,9 +156,11 @@
       const ctx = canvas.getContext("2d");
       const rate = video && video.frameRate;
       const fps = Math.max(1, Math.min(15, Number((rate && (rate.ideal || rate.max || rate.exact)) || rate) || 15));
-      const url = "http://127.0.0.1:" + st.port + "/stream?t=" + encodeURIComponent(st.token) +
-        "&cam=" + encodeURIComponent(cam.id);
-      let stopped = false, started = false, timer = 0, relayId = null, img = null, transport = "direct";
+      // Relay-only: there is no port/token here at all, so no URL is ever built in the page.
+      const url = (!st.relayOnly && st.port && st.token) ? "http://127.0.0.1:" + st.port + "/stream?t=" +
+        encodeURIComponent(st.token) + "&cam=" + encodeURIComponent(cam.id) : null;
+      let stopped = false, started = false, timer = 0, relayId = null, img = null, transport = url ? "direct" : "pending";
+      let entry = null;
 
       const begin = () => {
         if (started) return;
@@ -142,6 +170,16 @@
         const track = stream.getVideoTracks()[0];
         const origStop = track.stop.bind(track);
         track.stop = () => { cleanup(); origStop(); };   // closes the HTTP stream → the phone camera turns off
+        // end(): what Chromium does for a real camera that goes away: readyState "ended" + one "ended" event.
+        entry = { track, end: (reason) => {
+          if (!live.has(entry)) return;
+          cleanup(); origStop();
+          try { Object.defineProperty(track, "readyState", { value: "ended", configurable: true }); } catch (_) {}
+          try { track.dispatchEvent(new Event("ended")); } catch (_) {}
+          try { typeof track.onended === "function" && track.onended(new Event("ended")); } catch (_) {}
+          void reason;
+        } };
+        live.add(entry);
         try { Object.defineProperty(track, "label", { value: cam.label || "Phone camera" }); } catch (_) {}
         const origSettings = track.getSettings.bind(track);
         track.getSettings = () => Object.assign(origSettings(), { deviceId: devId(cam), groupId: GROUP_ID,
@@ -152,6 +190,7 @@
       const size = (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } };
       const cleanup = () => {
         stopped = true;
+        if (entry) live.delete(entry);
         clearTimeout(timer); clearTimeout(deadline);
         if (img) { img.onload = img.onerror = null; img.src = ""; img = null; }
         if (relayId) { window.postMessage({ __ldcam: "req", id: "c" + relayId, op: "close", ref: relayId }, "*"); waiters.delete(relayId); relayId = null; }
@@ -185,7 +224,12 @@
           relayId = id;
           if (stopped) return;
           if (m.error) { fail(m.error, m.error === "NotAllowedError" ? "The phone camera is turned off in LinuxDesk" : undefined); return; }
-          if (m.ended) { fail("NotReadableError"); return; }
+          if (m.ended) {
+            if (started) { entry && entry.end(m.reason || "failed"); return; }
+            fail(m.reason === "off" ? "NotAllowedError" : "NotReadableError",
+              m.reason === "off" ? "The phone camera is turned off in LinuxDesk" : undefined);
+            return;
+          }
           if (!m.frame) return;
           try {
             const bmp = await createImageBitmap(new Blob([m.frame], { type: "image/jpeg" }));
@@ -197,7 +241,7 @@
           } catch (_) {}
         }).then((id) => { relayId = id; });
       };
-      direct();
+      if (url) direct(); else relay();
     });
   }
 
@@ -224,13 +268,6 @@
     navigator.webkitGetUserMedia = legacy;
   }
 
-  // Pages listening for devicechange see the switch flip (polled; cheap, state() is cached 1 s).
-  let last = null;
-  setInterval(async () => {
-    if (document.hidden) return;
-    const st = await state();
-    const key = st.enabled ? st.cams.map(devId).join(",") : "";
-    if (last !== null && key !== last) { try { md.dispatchEvent(new Event("devicechange")); } catch (_) {} }
-    last = key;
-  }, 3000);
+  // Fallback when no push arrives (old worker, bridge missing): poll while a track is live or the tab is visible.
+  setInterval(() => { if (live.size || !document.hidden) state(); }, 3000);
 })();

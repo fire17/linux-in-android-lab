@@ -12,6 +12,7 @@
     <string name="ld_camera_on_text">מצלמת הטלפון זמינה ללינוקס</string>
     <string name="ld_camera_stop">עצירת המצלמה</string>
     <string name="ld_camera_denied">לא ניתנה הרשאה למצלמה, אז היא נשארת כבויה.</string>
+    <string name="ld_camera_relay_only">פרטיות מצלמה: רק דרך ממסר (אתרים לא רואים את כתובת המצלמה; קצת יותר איטי)</string>
     <string name="ld_notification_text">סשן לינוקס פעיל (שרת X ו-Chromium)</string>
 
     <string name="ld_start">הפעלה</string>

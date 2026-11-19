@@ -145,6 +145,11 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         }
 
         // Phone camera for Linux: same rule as the mic. CAMERA is asked for only here, only when turned ON.
+        // Cameras v3 relay-only privacy mode (default OFF). Saved now; applied live if the camera server runs.
+        bindCheck(R.id.opt_camera_relay_only, settings.cameraRelayOnly) { on ->
+            PhoneCamera.setRelayOnly(this, on)
+            if (PhoneCamera.running) SessionService.start(this, SessionService.ACTION_CAMERA_APPLY)
+        }
         camSwitch = findViewById(R.id.opt_camera)
         camSwitch.isChecked = PhoneCamera.consent
         camSwitch.setOnCheckedChangeListener { _, on ->

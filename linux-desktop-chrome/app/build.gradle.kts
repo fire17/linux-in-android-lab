@@ -23,7 +23,7 @@ android {
         targetSdk = 36
         // CI passes its run number, so every build is a higher version than the last and installs as an update.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(100) ?: 1
-        versionName = "0.2.15"
+        versionName = "0.2.16"
 
         ndk {
             // arm64-v8a = real phones. x86_64 = the CI emulator smoke test.

@@ -250,6 +250,13 @@
             android:text="@string/ld_camera_help"
             android:textSize="12sp" />
 
+        <!-- Cameras v3: relay-only privacy mode. Default OFF (Tami decides). -->
+        <CheckBox
+            android:id="@+id/opt_camera_relay_only"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_camera_relay_only" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

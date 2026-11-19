@@ -13,6 +13,7 @@
     <string name="ld_camera_on_text">Phone camera available to Linux</string>
     <string name="ld_camera_stop">Stop camera</string>
     <string name="ld_camera_denied">Camera permission was not granted, so the phone camera stays off.</string>
+    <string name="ld_camera_relay_only">Camera privacy: relay-only (web pages never see the camera address; a little slower)</string>
     <string name="ld_notification_text">Linux desktop session is running (X server + Chromium)</string>
 
     <string name="ld_start">Start</string>
