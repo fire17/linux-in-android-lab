@@ -167,7 +167,7 @@ class SessionService : Service() {
             if (!installer.packagesInstalled()) {
                 SessionBus.setState(State.INSTALLING_PACKAGES,
                     if (distro == Distro.ALPINE) getString(R.string.ld_state_packages)
-                    else "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.6-0.9 GB). This takes a while …")
+                    else "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.75 GB download, ~2.4 GB on disk). This takes a while …")
                 val r = proot.runOnce(distro.setupScript, timeoutSec = 3600) { SessionBus.log(it) }
                 if (r.exitCode != 0 || !installer.packagesInstalled()) {
                     SessionBus.setState(State.ERROR, "Package setup failed (exit=${r.exitCode}). Check network, then Start again.\n${r.tail.takeLast(600)}")

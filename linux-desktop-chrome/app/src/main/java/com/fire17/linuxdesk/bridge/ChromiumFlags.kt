@@ -19,7 +19,14 @@ import kotlin.math.roundToInt
  *  --renderer-process-limit=2  Fewer processes, to stay under Android 12+'s phantom-process cap (32) and
  *                              save memory.
  *  --disable-dev-shm-usage     Android has no real /dev/shm (we bind a directory there anyway).
- *  --disable-gpu               Default. proot exposes no GPU device, so software compositing is used.
+ *  --disable-gpu               Default. Without a kgsl-enabled guest Mesa there is no usable GPU, so software
+ *                              compositing is used.
+ *  GPU mode (experimental, OFF by default; Params.useGpu): setup-gpu.sh installs lfdevs' Turnip+Zink Mesa
+ *                              and the phone's /dev/kgsl-3d0 (already bound by ProotRuntime's -b /dev) drives
+ *                              GL via Zink on Vulkan. Then --disable-gpu is dropped for --ignore-gpu-blocklist
+ *                              --use-gl=angle --use-angle=gl (ANGLE on GLX → zink). Params.gpuFallback = true
+ *                              (set after the GPU process crashed) forces software again. guestGpuEnv() is
+ *                              the Mesa env for X apps and Chromium. notes/gpu-npu-plan.md §2.
  *  --top-chrome-touch-ui       Bigger, touch-friendly tab strip and toolbar in BROWSER mode.
  *  --load-extension            The bundled focus-bridge extension, which pops the Android keyboard when a
  *                              web text field gets focus. Chromium 137+ gates this switch behind the
@@ -51,8 +58,59 @@ object ChromiumFlags {
         val userDataDir: String = "/root/.config/linuxdesk-chromium",
         val extensionDir: String? = null,
         val useGpu: Boolean = false,
+        /** GPU was requested but the GPU process crashed this session: back to software (--disable-gpu). */
+        val gpuFallback: Boolean = false,
         /** e.g. "he-IL,en-US", from Android's LocaleList. */
         val acceptLanguages: String? = null,
+    )
+
+    /** Chromium flags for GPU mode (ANGLE on GLX, which Mesa serves with zink on Turnip/KGSL). */
+    val GPU_FLAGS = listOf(
+        "--ignore-gpu-blocklist",
+        "--use-gl=angle",
+        "--use-angle=gl",
+        "--enable-gpu-rasterization",
+        // Deliberately NOT --disable-gpu-process-crash-limit: after repeated GPU-process crashes Chromium must
+        // be free to fall back to software by itself. isGpuCrashLine() pins that fallback for the next launch.
+    )
+
+    /**
+     * Guest env for X clients and Chromium when GPU mode is on. zink on Turnip (Vulkan over /dev/kgsl-3d0);
+     * MESA_VK_WSI_DEBUG=sw because lorie's DRI3 cannot import buffers, so presents go through a CPU copy.
+     */
+    val GPU_ENV = listOf(
+        "MESA_LOADER_DRIVER_OVERRIDE=zink",
+        "GALLIUM_DRIVER=zink",
+        "TU_DEBUG=noconform",
+        "MESA_VK_WSI_DEBUG=sw",
+        "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json",
+    )
+
+    /** True when GPU flags apply: requested and not fallen back. */
+    fun gpuActive(p: Params): Boolean = p.useGpu && !p.gpuFallback
+
+    /** Guest env to add for X apps / Chromium. Empty when GPU mode is off or fell back. */
+    fun guestGpuEnv(useGpu: Boolean, gpuFallback: Boolean = false): List<String> =
+        if (useGpu && !gpuFallback) GPU_ENV else emptyList()
+
+    /**
+     * A line from Chromium's stderr that means the GPU process died (it then retries, and after a few times
+     * falls back by itself; we pin the fallback for the next launch).
+     */
+    fun isGpuCrashLine(line: String): Boolean {
+        val l = line.lowercase(Locale.ROOT)
+        // Chromium's own messages (gpu_process_host.cc / gpu_data_manager_impl_private.cc):
+        //   "GPU process exited unexpectedly: exit_code=…", "GPU process isn't usable. Goodbye.",
+        //   "Exiting GPU process due to errors during initialization", "GPU process crashed"
+        return GPU_CRASH_MARKERS.any { it in l }
+    }
+
+    private val GPU_CRASH_MARKERS = listOf(
+        "gpu process exited unexpectedly",
+        "gpu process isn't usable",
+        "exiting gpu process due to errors",
+        "gpu process crashed",
+        "gpu process lost",
     )
 
     fun scaleFactor(density: Float, scalePercent: Int): Float {
@@ -86,7 +144,7 @@ object ChromiumFlags {
             "--renderer-process-limit=2",
             "--disable-dev-shm-usage",
         )
-        if (!p.useGpu) flags += "--disable-gpu"
+        if (gpuActive(p)) flags += GPU_FLAGS else flags += "--disable-gpu"
         if (p.screenWidthPx > 0 && p.screenHeightPx > 0) {
             // These switches are in DIPs. fit-window.sh fixes the size in real pixels afterwards anyway.
             val w = (p.screenWidthPx / scale).roundToInt().coerceAtLeast(200)

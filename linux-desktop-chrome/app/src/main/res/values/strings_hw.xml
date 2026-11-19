@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hardware lane (K/hw/*): the read-only Hardware screen. Hebrew in values-iw/strings_hw.xml. -->
+<resources>
+    <string name="ld_hw_open">Hardware</string>
+    <string name="ld_hw_title">Hardware</string>
+    <string name="ld_hw_intro">What this phone has: GPU, NPU hints and cameras. Read-only: nothing is opened for capture, no permission is used, and no serial number or other identifier is read. NPU lines are hints, not proof.</string>
+    <string name="ld_hw_probing">Checking the hardware …</string>
+    <string name="ld_hw_copy">Copy</string>
+    <string name="ld_hw_copied">Hardware info copied</string>
+    <string name="ld_hw_show_json">Show full JSON</string>
+</resources>

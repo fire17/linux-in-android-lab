@@ -153,6 +153,9 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         findViewById<Button>(R.id.btn_storage).setOnClickListener {
             startActivity(Intent(this, ReviewActivity::class.java))
         }
+        findViewById<Button>(R.id.btn_hw).setOnClickListener {
+            startActivity(Intent(this, com.fire17.linuxdesk.hw.HwActivity::class.java))
+        }
         findViewById<Button>(R.id.btn_dev_options).setOnClickListener {
             try {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))

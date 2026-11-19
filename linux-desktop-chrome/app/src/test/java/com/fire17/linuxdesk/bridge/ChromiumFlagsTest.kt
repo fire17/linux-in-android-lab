@@ -71,4 +71,46 @@ class ChromiumFlagsTest {
         assertEquals("http://10.0.0.2:8080", ChromiumFlags.normalizeUrl("http://10.0.0.2:8080"))
         assertEquals("about:blank", ChromiumFlags.normalizeUrl("about:blank"))
     }
+
+    @Test fun gpuOffByDefault() {
+        val f = ChromiumFlags.build(phone)
+        assertTrue("--disable-gpu" in f)
+        assertFalse(f.any { it.startsWith("--use-gl") || it.startsWith("--use-angle") || it == "--ignore-gpu-blocklist" })
+        assertTrue(ChromiumFlags.guestGpuEnv(useGpu = false).isEmpty())
+    }
+
+    @Test fun gpuOnDropsDisableGpu() {
+        val f = ChromiumFlags.build(phone.copy(useGpu = true))
+        assertFalse("--disable-gpu" in f)
+        for (flag in listOf("--ignore-gpu-blocklist", "--use-gl=angle", "--use-angle=gl")) {
+            assertTrue("missing $flag in $f", flag in f)
+        }
+        // The URL stays last, and the other mandatory flags are unchanged.
+        assertEquals("https://example.com", f.last())
+        assertTrue("--no-sandbox" in f && "--ozone-platform=x11" in f)
+        assertFalse("crash limit must stay so Chromium can fall back", "--disable-gpu-process-crash-limit" in f)
+    }
+
+    @Test fun gpuFallbackForcesSoftware() {
+        val f = ChromiumFlags.build(phone.copy(useGpu = true, gpuFallback = true))
+        assertTrue("--disable-gpu" in f)
+        assertFalse("--use-gl=angle" in f)
+        assertTrue(ChromiumFlags.guestGpuEnv(useGpu = true, gpuFallback = true).isEmpty())
+    }
+
+    @Test fun gpuEnvIsZinkOnTurnip() {
+        val env = ChromiumFlags.guestGpuEnv(useGpu = true)
+        for (e in listOf("MESA_LOADER_DRIVER_OVERRIDE=zink", "GALLIUM_DRIVER=zink", "TU_DEBUG=noconform", "MESA_VK_WSI_DEBUG=sw")) {
+            assertTrue("missing $e in $env", e in env)
+        }
+        assertTrue(env.all { it.contains('=') && !it.contains(' ') })
+    }
+
+    @Test fun gpuCrashLines() {
+        assertTrue(ChromiumFlags.isGpuCrashLine("[1234:1234:1119/204512.123:ERROR:gpu_process_host.cc(995)] GPU process exited unexpectedly: exit_code=139"))
+        assertTrue(ChromiumFlags.isGpuCrashLine("[1:1:ERROR:gpu_data_manager_impl_private.cc(415)] GPU process isn't usable. Goodbye."))
+        assertTrue(ChromiumFlags.isGpuCrashLine("ERROR:viz_main_impl.cc(186)] Exiting GPU process due to errors during initialization"))
+        assertFalse(ChromiumFlags.isGpuCrashLine("[browser] exec chromium-browser --disable-gpu"))
+        assertFalse(ChromiumFlags.isGpuCrashLine("ERROR:bus.cc(407)] Failed to connect to the bus"))
+    }
 }

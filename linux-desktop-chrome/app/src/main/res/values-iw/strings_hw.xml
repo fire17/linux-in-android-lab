@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ld_hw_open">חומרה</string>
+    <string name="ld_hw_title">חומרה</string>
+    <string name="ld_hw_intro">מה יש בטלפון הזה: GPU, רמזים ל־NPU ומצלמות. קריאה בלבד: שום דבר לא נפתח לצילום, לא נעשה שימוש באף הרשאה, ולא נקראים מספר סידורי או מזהה אחר. שורות ה־NPU הן רמזים, לא הוכחה.</string>
+    <string name="ld_hw_probing">בודק את החומרה …</string>
+    <string name="ld_hw_copy">העתקה</string>
+    <string name="ld_hw_copied">פרטי החומרה הועתקו</string>
+    <string name="ld_hw_show_json">הצגת ה־JSON המלא</string>
+</resources>

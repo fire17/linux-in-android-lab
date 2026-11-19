@@ -68,7 +68,7 @@
                 android:id="@+id/distro_omarchy"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Omarchy (Arch Linux ARM: Chrome + i3 with Omarchy's look; first run downloads ~0.8 GB + ~0.8 GB packages)" />
+                android:text="Omarchy (Arch Linux ARM: Chrome + i3 with Omarchy's look; first run downloads ~1.6 GB and needs ~4 GB free)" />
         </RadioGroup>
 
         <LinearLayout
@@ -117,6 +117,12 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Storage" />
+
+        <Button
+            android:id="@+id/btn_hw"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_hw_open" />
 
         <TextView
             android:layout_width="wrap_content"

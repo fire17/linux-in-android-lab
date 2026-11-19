@@ -325,6 +325,7 @@ object GenieRuntime {
         override fun xorBlocks() = GenieSettings.xorBlocksNow(ctx)
         override fun fs(cmd: JSONObject): Reply = FsVerbs.handle(ctx, cmd)
         override fun fsInfo(): JSONObject = com.fire17.linuxdesk.storage.StoragePrefs.capsInfo(ctx)
+        override fun hwInfo(): JSONObject = com.fire17.linuxdesk.hw.HwProbe.cachedOrWarm(ctx)   // never blocks the Router
         // Read straight from prefs (pair owns GenieSettings and adds the getter + switch); default OFF.
         override fun wideWindowGate(): Boolean =
             ctx.getSharedPreferences("ld.genie", Context.MODE_PRIVATE).getBoolean("wide_window_gate", false)

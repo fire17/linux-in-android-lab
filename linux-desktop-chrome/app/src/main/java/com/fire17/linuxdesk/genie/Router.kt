@@ -61,6 +61,8 @@ interface RouterEnv {
     fun fsAvailable(): Boolean = true
     /** Storage state for sys.caps / sys.ping: {fs_mode, all_files_granted, xor_guard, roots} (StoragePrefs.capsInfo). */
     fun fsInfo(): JSONObject = JSONObject()
+    /** Read-only hardware detection for sys.caps (HwProbe.get: device/soc/gpu/vulkan/npu hints/cameras). No identifiers. */
+    fun hwInfo(): JSONObject = JSONObject()
     /**
      * `wide_window_gate` (prefs ld.genie, default false): when true the genie window gates every acting verb
      * ([Router.WIDE_GATED]); when false (the default) it gates only Storage Genie's three ([Router.SG_GATED]).
@@ -391,7 +393,8 @@ class Router(
         when {
             verb == "sys.ping" -> done(Reply.Json(ping(s)))
             verb == "sys.caps" -> done(Reply.Json(JSONObject().put("ok", true).put("caps", JSONArray(caps())).put("audio", false)
-                .put("fs", try { env.fsInfo() } catch (_: Exception) { JSONObject() })))
+                .put("fs", try { env.fsInfo() } catch (_: Exception) { JSONObject() })
+                .put("hw", try { env.hwInfo() } catch (_: Exception) { JSONObject() })))
             verb == "sys.audit" -> pool.execute {
                 done(audit?.let { Reply.Json(it.query(cmd.optLong("since", 0L))) } ?: err("unsupported", "no audit log"))
             }

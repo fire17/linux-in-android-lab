@@ -88,6 +88,12 @@
             android:exported="false"
             android:label="@string/ld_genie_title" />
 
+        <!-- Hardware lane: read-only detection screen (K/hw/HwActivity). No permission, not exported. -->
+        <activity
+            android:name=".hw.HwActivity"
+            android:exported="false"
+            android:label="@string/ld_hw_title" />
+
         <activity
             android:name=".storage.ReviewActivity"
             android:exported="false"

@@ -11,7 +11,9 @@
 # scriptlets assume a booted systemd). It downloads that package file only, to take its themes.
 #
 # Package names were checked 2026-11-19 against the live ALARM core/extra/alarm dbs and omarchy.db.
-# Expect roughly 600-900 MB of downloads (Chrome 205 MB, gtk3, mesa, fonts, ...) on top of the rootfs.
+# Measured 2026-11-19 from the live repo dbs (dependency closure minus the base rootfs): 193 packages, ~733 MiB
+# download, ~2.4 GB installed (Chrome 205 MB, gtk3, mesa, noto-fonts, ...). Plus the 0.73 GB extracted rootfs.
+# Free space needed: ~4 GB during setup (the 0.8 GB tarball is deleted after extraction).
 set -eu
 
 log() { echo "[omarchy] $*"; }
@@ -24,12 +26,16 @@ log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on 
 #  - CheckSpace: needs real mount points, which proot does not give; it makes pacman refuse with "could not
 #    determine filesystem mount points". Turned off.
 CONF=/etc/pacman.conf
-sed -i -e 's/^DownloadUser/#DownloadUser/' -e 's/^CheckSpace/#CheckSpace/' "$CONF"
-grep -q '^DisableSandbox' "$CONF" || sed -i 's/^\[options\]/[options]\nDisableSandbox/' "$CONF"
-# NoExtract: the kernel/firmware the app skipped on extraction must not come back on -Syu; docs save space.
-grep -q '^NoExtract.*usr/lib/firmware' "$CONF" || sed -i 's|^\[options\]|[options]\nNoExtract = usr/lib/firmware/* usr/lib/modules/* boot/* usr/share/doc/* usr/share/gtk-doc/*|' "$CONF"
-# [aur] in the stock ALARM pacman.conf is not a real repo on most mirrors; drop it so -Sy does not fail.
-sed -i '/^\[aur\]/,/^Include/ s/^/#/' "$CONF"
+# One awk pass (POSIX awk; the base rootfs has gawk, no python yet). Idempotent: running it twice changes nothing.
+awk '
+  /^\[options\]/ { print; if (!seen++) { print "DisableSandbox"; print "NoExtract = usr/lib/firmware/* usr/lib/modules/* boot/* usr/share/doc/* usr/share/gtk-doc/*" }; next }
+  /^DisableSandbox/ || /^NoExtract = usr\/lib\/firmware/ { next }
+  /^DownloadUser/ || /^CheckSpace/ { print "#" $0; next }
+  /^\[aur\]/ { aur = 1; print "#" $0; next }
+  /^\[/ { aur = 0 }
+  aur && /^Include/ { print "#" $0; next }
+  { print }
+' "$CONF" > "$CONF.new" && mv "$CONF.new" "$CONF"
 # Mirror: the geo-redirector host, plus HTTPS mirrors that verified on 2026-11-19.
 cat > /etc/pacman.d/mirrorlist <<'EOF'
 Server = https://fl.us.mirror.archlinuxarm.org/$arch/$repo
@@ -91,9 +97,9 @@ pacman -Sy --noconfirm
 # pulseaudio libpulse  sound out / mic in. The app's PulseHost (audio lane) installs with apk, which Arch lacks; it
 #                      skips its install when /etc/linuxdesk/audio-v1 and /usr/bin/pulseaudio exist, so this
 #                      script installs them and writes that marker (pactl/parec are in libpulse on Arch).
-PKGS="xkeyboard-config xorg-fonts-misc xorg-fonts-alias-misc xorg-mkfontscale xdotool xorg-xwininfo xorg-xprop \
-xorg-xsetroot xorg-xrandr i3-wm i3status rofi dunst feh alacritty btop \
-noto-fonts noto-fonts-emoji ttf-dejavu ttf-liberation ttf-jetbrains-mono-nerd-basic fontconfig python pulseaudio libpulse"
+PKGS="xkeyboard-config xorg-fonts-misc xorg-fonts-alias-misc xorg-mkfontscale xdotool xorg-xwininfo xorg-xprop"
+PKGS="$PKGS xorg-xsetroot xorg-xrandr i3-wm i3status rofi dunst feh alacritty btop"
+PKGS="$PKGS noto-fonts noto-fonts-emoji ttf-dejavu ttf-liberation ttf-jetbrains-mono-nerd-basic fontconfig python pulseaudio libpulse"
 pacman -S --needed --noconfirm $PKGS || log "pacman reported errors (often harmless hook failures under PRoot); verifying ..."
 
 # Browser: Omarchy's default, Google Chrome 158 (glibc; deps gtk3 nss alsa-lib ..., no systemd). Fallback: ALARM

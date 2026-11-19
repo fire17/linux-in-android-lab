@@ -88,6 +88,9 @@ jobs:
           APK=app/build/outputs/apk/debug/app-debug.apk
           unzip -l "$APK" | grep -E 'lib/(arm64-v8a|x86_64)/lib(Xlorie|proot|proot_loader|talloc|android-shmem)\.so'
           unzip -l "$APK" | grep -E 'assets/(rootfs/alpine-(aarch64|x86_64)\.rootfs\.bin|linuxdesk/start-browser\.sh)'
+          # Omarchy distro (phone-only, aarch64): its scripts ship as assets; the Arch rootfs itself is downloaded on
+          # first use, never bundled. The x86_64 emulator jobs always run Alpine (Distro.omarchySupported() is false).
+          unzip -l "$APK" | grep -E 'assets/linuxdesk/(setup-omarchy\.sh|start-omarchy\.sh|setup-genie-arch\.sh|omarchy/omarchy-theme\.py)'
           "$ANDROID_HOME"/build-tools/36.0.0/aapt2 dump badging "$APK" | grep -E "^package:|targetSdk|application-label"
           "$ANDROID_HOME"/build-tools/36.0.0/aapt2 dump xmltree --file AndroidManifest.xml "$APK" | grep -iE 'extractNativeLibs|X11ServerService|DesktopActivity' || true
           ls -l "$APK"; sha256sum "$APK"

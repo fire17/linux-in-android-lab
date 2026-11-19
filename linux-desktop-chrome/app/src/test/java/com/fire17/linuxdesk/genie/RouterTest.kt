@@ -104,6 +104,7 @@ class RouterTest {
         override fun xorBlocks() = xor
         override fun wideWindowGate() = wide
         override fun fsInfo(): JSONObject = JSONObject().put("fs_mode", "scoped")
+        override fun hwInfo(): JSONObject = JSONObject().put("soc", JSONObject().put("model", "SM8650"))
         override fun fs(cmd: JSONObject): Reply { fsCalls += cmd; return fsReply(cmd) }
         override fun version() = "0.1.0-test"
         override fun onAppClosed() { appClosedCalls++ }
@@ -375,6 +376,13 @@ class RouterTest {
         val w = authed()
         assertEquals("scoped", cmd(w, "sys.caps", 1).getJSONObject("fs").getString("fs_mode"))
         assertEquals("scoped", cmd(w, "sys.ping", 2).getJSONObject("fs").getString("fs_mode"))
+    }
+
+    @Test fun capsCarriesHwInfo() {
+        val w = authed()
+        val caps = cmd(w, "sys.caps", 1)
+        assertTrue(caps.getBoolean("ok"))
+        assertEquals("SM8650", caps.getJSONObject("hw").getJSONObject("soc").getString("model"))
     }
 
     @Test fun lockedRefusesShellAndInputOnly() {
