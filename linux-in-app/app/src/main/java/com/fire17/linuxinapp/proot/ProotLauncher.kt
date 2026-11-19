@@ -133,7 +133,39 @@ class ProotLauncher(private val context: Context) {
         return lines
     }
 
+    /** One self-test step: the guest shell snippet, its own exit code and its own output. */
+    data class StepResult(val name: String, val script: String, val result: RunResult) {
+        val ok: Boolean get() = result.exitCode == 0
+        /** The single most useful line to quote in a CI log / bug report. */
+        val firstLine: String get() = result.output.lineSequence().firstOrNull { it.isNotBlank() } ?: "(no output)"
+    }
+
+    /**
+     * Runs every SELF_TEST_STEPS entry as its OWN proot invocation, so one failure (e.g. fork
+     * ENOSYS) can't hide whether the others work. Steps are ordered from "needs nothing" to
+     * "needs fork": `echo` and `read` are sh builtins (no fork); `uname`/`cat`/`id` are external
+     * busybox applets, so `sh -c "a; b"` must fork for them.
+     */
+    fun runSelfTestSteps(timeoutSec: Long = 60): List<StepResult> =
+        SELF_TEST_STEPS.map { (name, script) -> StepResult(name, script, runOnce(script, timeoutSec)) }
+
     companion object {
+        /** Kept for callers/docs: the original one-shot snippet (needs fork for every applet). */
         const val SELF_TEST_SCRIPT = "uname -a; echo ---; cat /etc/os-release; echo ---; id"
+
+        /**
+         * name -> guest sh snippet. `exec` makes a lone external command run WITHOUT fork, so
+         * `exec uname -m` proves exec+loader work even where fork is broken; `fork-probe` then
+         * isolates fork itself (busybox sh forks for an external command that isn't the last
+         * one). The x86_64 regression this catches: "/bin/sh: can't fork: Function not implemented".
+         */
+        val SELF_TEST_STEPS: List<Pair<String, String>> = listOf(
+            "builtin-echo" to "echo builtin-ok",
+            "exec-uname-m" to "exec /bin/uname -m",
+            "fork-probe" to "/bin/true; echo fork-ok",
+            "uname-a" to "uname -a",
+            "os-release" to "cat /etc/os-release",
+            "id" to "id",
+        )
     }
 }

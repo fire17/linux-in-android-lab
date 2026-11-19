@@ -11,8 +11,10 @@
 > `uname -a; cat /etc/os-release; id` ומציג את התוצאה. **שום דבר עוד לא נבדק על טלפון אמיתי.**
 > הסטטוס המדויק נמצא למטה, בטבלה "מה אמור לעבוד / מה לא הוכח".
 
-Status: **source complete, never built or run.** It was written on a Mac with a full disk, so
-Gradle was not run. CI builds it (see `.github/workflows/build.yml`).
+Status (2026-11-19): **CI builds the APK. On the x86_64 emulator proot starts and loads Alpine, but
+every fork failed** (`/bin/sh: can't fork: Function not implemented`, run 44508979139). The cause is
+known and the pinned proot is fixed (see [x86_64 fork / ENOSYS](#x86_64-fork--enosys-root-caused-2026-11-19)),
+but **the fix has not run yet.** It has not been tested on a real phone.
 
 ---
 
@@ -47,10 +49,11 @@ MainActivity ──bind──► LinuxService (foreground, specialUse, partial w
 | `.../rootfs/RootfsInstaller.kt` | Extracts the right-arch tarball into `files/rootfs.partial`, writes `resolv.conf`/`hosts`/profile and a version marker, then renames it into place atomically. Idempotent. |
 | `.../rootfs/TarGzExtractor.kt` | Streaming tar.gz extractor with no dependencies. Handles ustar, GNU long names, PAX, symlinks (`Os.symlink`) and modes. Hard links become **copies** because `link(2)` is denied to apps. Blocks path traversal. |
 | `app/src/androidTest/.../ProotSelfTest.kt` | Runs the same self-test headless (`connectedDebugAndroidTest`). |
-| `scripts/fetch-proot.sh` | Downloads 10 proot `.so` files (2 ABIs), **sha256-pinned**. |
+| `scripts/fetch-proot.sh` | Downloads Termux's proot 5.1.107.102, talloc and shmem `.deb` files (2 ABIs), sha256-pinned. It unpacks 10 jniLibs files, applies the talloc soname patch, and checks every output hash. |
+| `scripts/ci-arm64-proot.sh` | The arm64 smoke test the `arm64-proot` CI job runs inside `termux/termux-docker:aarch64`. |
 | `scripts/fetch-rootfs.sh` | Downloads Alpine 3.24.4 minirootfs aarch64 + x86_64, **sha256-pinned** from Alpine's release YAML. |
 | `scripts/fetch-all.sh` | Runs both. `preBuild` fails with a clear message if the payload is missing. |
-| `.github/workflows/build.yml` | JDK 21 + SDK 36 + Gradle 8.14.3 → fetch → `assembleDebug` → upload `LinuxInApp-debug-apk`. A second job, best-effort, runs the self-test on an x86_64 emulator. |
+| `.github/workflows/build.yml` | JDK 21 + SDK 36 + Gradle 8.14.3 → fetch → `assembleDebug` → upload `LinuxInApp-debug-apk`. Two best-effort jobs follow. `emulator-selftest` runs the per-step self-test on an x86_64 emulator and reports each step plus the exact failure line. `arm64-proot` runs the arm64 binaries in termux-docker on `ubuntu-24.04-arm`. |
 
 ### Why targetSdk 36 (not 28)
 
@@ -78,40 +81,86 @@ they stay compressed inside the APK and cannot be exec'd.
 
 | Payload | Source | Verified |
 |---|---|---|
-| `libproot.so`, `libproot_loader.so`, `libproot_loader32.so`, `libtalloc.so`, `libandroid-shmem.so` × {arm64-v8a, x86_64} | `devwithzachary/LinuxOnAndroid@d1e0facd2f5b…` `app/src/main/jniLibs/` (built from `termux/proot@7266fb3e85…` per its `external/PROVENANCE.md`) | All 10 downloaded in memory and sha256-hashed (hashes pinned in the script). ELF-parsed: every PT_LOAD has `Align 0x4000` (16 KB OK). `libproot.so` is PIE, interp `/system/bin/linker64`, NEEDED `libtalloc.so libandroid-shmem.so libdl.so libc.so`. The loader is static. |
+| `libproot.so`, `libproot_loader.so`, `libproot_loader32.so`, `libtalloc.so`, `libandroid-shmem.so` × {arm64-v8a, x86_64} | **Since run 4:** the official Termux packages `proot 5.1.107.102` (= `termux/proot` tag `v5.1.107.102`, `52d65a4d…`), `libtalloc 2.5.0`, `libandroid-shmem 0.7` from `packages-cf.termux.dev/apt/termux-main`. **Before (runs 1–3):** `devwithzachary/LinuxOnAndroid@d1e0facd2f5b…`, built from `termux/proot@7266fb3e85…`, which has no x86_64 fork fix. Revert with `PROOT_SOURCE=linuxonandroid`. | All 6 `.deb` files were downloaded to /tmp, sha256-pinned, unpacked and ELF-parsed, then deleted. The 10 output files are pinned too. The script was run end to end in a /tmp copy and all 10 output hashes matched, both fresh and cached. The 64-bit PT_LOADs have `Align 0x4000`. `loader32` has `0x1000`, which only matters for 32-bit guests, and we ship none. `proot` is PIE, interp `/system/bin/linker64`. Its `DT_NEEDED libtalloc.so.2` and talloc's `DT_SONAME` are byte-patched to `libtalloc.so`, because APKs only carry `lib*.so`. Termux's `RUNPATH` and loader/tmp paths are compiled in, but `LD_LIBRARY_PATH`, `PROOT_LOADER`, `PROOT_LOADER_32` and `PROOT_TMP_DIR` override them. **Risk:** the Termux pool keeps only the current version (`5.1.107.101` already returns 404), so a Termux bump will make the fetch fail loudly until the pins are updated. |
 | `alpine-minirootfs-3.24.4-aarch64.tar.gz` (4,029,843 B) | dl-cdn.alpinelinux.org `v3.24/releases/aarch64` | sha256 `4b14c18f…98a8de` from `latest-releases.yaml`. HEAD request returns 200. |
 | `alpine-minirootfs-3.24.4-x86_64.tar.gz` (3,704,088 B) | `…/x86_64` | sha256 `cdaa38cb…923012`. HEAD request returns 200. |
 | `com.termux.termux-app:terminal-view:0.118.0` | JitPack (pom resolves; `terminal-emulator:0.118.0` is transitive) | The API used here (`TerminalSession` 6-arg ctor, `TerminalSessionClient`, `TerminalViewClient`, `attachSession`, `setTextSize`, `mEmulator.paste`) was read from tag `v0.118.0` source. |
 | Gradle 8.14.3 | services.gradle.org | `distributionSha256Sum` pinned. |
 
-`PROOT_FROM_SOURCE=1 ./scripts/fetch-proot.sh` (needs `ANDROID_NDK_HOME`) rebuilds the
-binaries from that same pinned commit instead of downloading them. This path is untested.
+The old `PROOT_FROM_SOURCE=1` path (rebuilding LinuxOnAndroid's vendored, pre-fix proot) was removed.
+It would have rebuilt the same fork bug. A from-source build of `termux/proot` ≥ `v5.1.107.98` with
+the NDK is the right long-term replacement, and it is not written yet.
 
 **Licensing:** proot is GPL-2.0-or-later, talloc is LGPL-3.0+, and libandroid-shmem is BSD. They are
-shipped and **exec'd as separate programs**, and their corresponding source is the pinned commit above.
+shipped and **exec'd as separate programs**. Their corresponding source is `termux/proot` tag `v5.1.107.102` plus termux-packages `packages/{proot,libtalloc,libandroid-shmem}/build.sh` (see `scripts/fetch-proot.sh`).
 terminal-view and terminal-emulator are Apache-2.0. The app's own Kotlin code is Tami's and is not
 GPL-linked. Before any public release, add a "Source / licenses" screen that links the pinned proot source.
 
 ---
 
-## Expected on first run vs. unproven (honest)
+## Verification status (honest, 2026-11-19)
 
-**Nothing here has been compiled or run.** The Mac disk is full, so there was no Gradle, emulator or phone.
+**PROVEN** means it was observed in a real CI log. **Expected** means it is argued from source and has not run yet.
+The Mac disk is full, so nothing was run locally. There was no Gradle, emulator or phone here.
 
-| Item | Confidence | Why |
+| Item | Status | Evidence |
 |---|---|---|
-| Gradle config resolves (AGP 8.13.2, Kotlin 2.2.21, Gradle 8.14.3, JitPack terminal-view) | High | Every version exists (checked against Google Maven, Maven Central, JitPack and Gradle on 2026-11-19). |
-| Kotlin compiles | Medium-high | Written against the real v0.118.0 Java signatures, but never compiled. Most likely failures are small nullability or SAM mismatches against the Java interfaces; fix them in CI. |
-| Fetch scripts download and verify | High | URLs and hashes were checked live. |
-| APK installs; `lib/<abi>/libproot.so` is extracted to nativeLibraryDir | High | Standard `useLegacyPackaging` behaviour; same as LinuxOnAndroid. |
-| First launch extracts the Alpine rootfs (~4 MB → ~9 MB) | Medium-high | The extractor is custom and untested. Alpine minirootfs is mostly symlinks into busybox, which `Os.symlink` handles. |
-| **Self-test prints `Linux … aarch64`, `NAME="Alpine Linux"`, `uid=0(root)`** | **Medium** | This is the core claim. The argv and env mirror LinuxOnAndroid's working engine (same binaries, `PROOT_LOADER`, `-0`, `--link2symlink`, `PROOT_NO_SECCOMP=1`). Not observed on a device. |
-| Interactive terminal: typing, prompt, `ls`, `apk update`, `apk add python3` | Medium | The terminal-view wiring follows Termux's own usage. Network depends on the written `resolv.conf` (1.1.1.1, 8.8.8.8). |
+| Gradle config resolves, Kotlin compiles, debug APK builds | **PROVEN** (CI) | Run 44508979139, job `apk`: `assembleDebug` succeeded and the artifact was uploaded. |
+| Fetch scripts download and verify | **PROVEN** (CI) | `[fetch-proot] ok …` and `[fetch-rootfs] ok …` in the same run. The new Termux-based `fetch-proot.sh` was also run end to end on the Mac in /tmp, and all 10 output hashes matched. |
+| APK installs; `lib/x86_64/libproot.so` etc. are extracted to nativeLibraryDir and executable | **PROVEN** on x86_64 emulator API 34 | Logcat: `libproot.so: 253488 bytes, canExecute=true`, and the same for the loader, talloc and shmem. |
+| Rootfs extraction | **PROVEN** on x86_64 | `rootfs installed in 240 ms: Stats(files=84, dirs=96, symlinks=335, …)`, `bin/busybox exists: true`. |
+| proot runs in the `untrusted_app` domain and its loader maps guest ELFs from app data | **PROVEN** on x86_64 | SELinux audit: `granted { execute } … name="busybox"` and `… name="ld-musl-x86_64.so.1"`, `tcontext=app_data_file`, under `libproot.so`. So the jniLibs + loader design works at targetSdk 36. |
+| Guest `/bin/sh` starts | **PROVEN** on x86_64 | It printed its own error message. |
+| Run-4 changes compile and run: per-step self-test (`ProotLauncher.runSelfTestSteps`), the new CI report step, the `arm64-proot` job, and the Termux-based binaries | **Not yet** | They were written 2026-11-19 after run 3. Gradle was not run locally, so the first proof is the next CI run. |
+| Termux binaries' compiled-in Termux paths | Known caveat | `RUNPATH` and the default loader and tmp paths point at `/data/data/com.termux/…`, and the app overrides them with env vars. `libandroid-shmem` hardcodes `/data/data/com.termux/files/usr/tmp/ashv_key_%d`, so SysV shared memory (X11/VNC-style apps) may fail. Plain shell, `apk` and Python do not use it. |
+| **Guest fork on x86_64** | **FAILED** (runs 1–3), fix **expected**, not run yet | `/bin/sh: can't fork: Function not implemented`, `exit=2`. Root cause and fix are in the next section. Proof will be run 4's `STEP fork-probe exit=0 :: fork-ok`. |
+| Self-test `uname`/`os-release`/`id` on x86_64 | Expected to pass with proot 5.1.107.102 | It depends on fork. Upstream says the identical case passes: Alpine 3.24 on an Android 15 x86_64 emulator, in an app targeting API 35 (commit `9bd53079` message). |
+| **arm64 (real phones): fork** | **Expected to work, even with the OLD binaries.** Not observed | aarch64 has no fork syscall. musl uses `clone(SIGCHLD, 0)`, and `clone` is allowed for all ABIs in Android's app seccomp policy. Sources are cited below. |
+| arm64 binaries load and run Alpine aarch64 | Not yet observed | The new CI job `arm64-proot` runs the exact arm64-v8a jniLibs in `termux/termux-docker:aarch64` on `ubuntu-24.04-arm`. This proves the binaries, the talloc patch and aarch64 fork under proot, **but not the Android app sandbox** (stock kernel, no zygote seccomp, no SELinux). |
+| Interactive terminal: typing, prompt, `ls`, `apk update`, `apk add python3` | Medium | The terminal-view wiring follows Termux's own usage. Network depends on the written `resolv.conf` (1.1.1.1, 8.8.8.8). Not run. |
 | Shell survives app switch and rotation | Medium | The service owns the session and the activity re-attaches. Not tested. |
-| x86_64 emulator CI job passes | Unknown | `continue-on-error`. Emulator kernels sometimes behave differently under ptrace. It is evidence, not a gate. |
 | Phantom process killer (Android 12+) kills guest processes beyond ~32 (`signal 9`) | Known limitation | The app cannot change this. The user runs `adb shell settings put global settings_enable_monitor_phantom_procs false` (12L+), or uses Developer options → "Disable child process restrictions". |
 | No systemd, Docker, real root, mount or iptables | By design | That is proot. A real kernel needs the AVF or QEMU tiers from the research. |
 | Play policy | Grey zone | Bundling the rootfs as an asset (done here) is the lower-risk route. `apk add` downloading native code at runtime is the grey part. Not for Play without a decision. |
+
+### x86_64 fork / ENOSYS (root-caused 2026-11-19)
+
+**Symptom.** CI run 44508979139, job `emulator-selftest` (x86_64, API 34 google_apis). proot started and the loader
+mapped `busybox` and `ld-musl-x86_64.so.1` (SELinux `granted { execute }`). Then:
+`/bin/sh: can't fork: Function not implemented`, `exit=2`.
+
+**Hypothesis confirmed, link by link, from source:**
+
+1. **musl calls the legacy `fork` syscall on x86_64, and `clone` on aarch64.**
+   - musl `src/process/_Fork.c` L35–39: `#ifdef SYS_fork` / `ret = __syscall(SYS_fork);` / `#else` / `ret = __syscall(SYS_clone, SIGCHLD, 0);`
+   - musl `arch/x86_64/bits/syscall.h.in` L57–59 define `__NR_clone 56`, `__NR_fork 57`, `__NR_vfork 58`.
+   - musl `arch/aarch64/bits/syscall.h.in` has **no** `__NR_fork` or `__NR_vfork`. L221 is `#define __NR_clone 220`.
+   - musl's x86_64 `vfork` (`src/process/x86_64/vfork.s` L5) is `mov $58,%eax`, which is the real vfork syscall.
+2. **Android's app seccomp policy does not allow `fork` on 64-bit ABIs.**
+   - bionic `libc/SECCOMP_ALLOWLIST_APP.TXT` L35: `fork()	lp32`. It applies to 32-bit only, and per L2 "the resultant policy is applied only to zygote spawned processes".
+   - `SECCOMP_ALLOWLIST_COMMON.TXT` allows `clone(...) all` (L14) and `vfork() arm,x86,x86_64` (L25). Bionic itself never calls `fork` (no entry in `SYSCALLS.TXT`).
+   - So on x86_64 a musl `fork` raises SIGSYS, and `vfork` is allowed.
+3. **Our pinned proot answered that SIGSYS with ENOSYS.**
+   - termux/proot `src/tracee/event.c` (master) L835–884: `case SIGSYS:`, then `if (siginfo.si_code == SYS_SECCOMP)`, then `handle_seccomp_event(tracee)`.
+   - This path is **not** gated on `PROOT_NO_SECCOMP`. That variable only skips proot's own filter (L145–146). So `PROOT_NO_SECCOMP=1` neither caused this nor could fix it.
+   - In `src/tracee/seccomp.c` at the pinned commit `7266fb3e`, `handle_seccomp_event_common` has no `PR_fork` case. Its `default:` (L630–632) does `set_result_after_seccomp(tracee, -ENOSYS);`.
+4. **Upstream fixed exactly this:**
+   - termux/proot commit `9bd53079` (2026-10-18), "seccomp: run fork(2) as clone(2) when the outer policy rejects it". It is followed by `e2d843ee`, "give the child of fork(2) run as clone(2) its registers back".
+   - Its message says: *"Android's app seccomp policy only allows fork(2) on 32-bit ABIs: on x86_64 the syscall raises SIGSYS … Alpine's /bin/sh reports "can't fork: Function not implemented" … aarch64 has no fork(2), so libcs use clone(2) there and are not affected. … Tested on the Android 15 x86_64 emulator."* It closes termux/proot#237.
+   - On master, `src/tracee/seccomp.c` L648–663 is `case PR_fork:` … `set_sysnum(tracee, PR_clone); poke_reg(tracee, SYSARG_1, SIGCHLD);` … `restart_syscall_after_seccomp(tracee);`.
+   - First released in tag `v5.1.107.98`. There is no env var or flag for this; the only remedy is a newer binary.
+
+**Fix applied.** `scripts/fetch-proot.sh` now pins Termux's `proot 5.1.107.102`, which is 42 commits past `e2d843ee`
+and 0 behind. The details are in the provenance table above.
+
+**Remaining x86_64 gap (by reading only).** No `case PR_vfork:` exists, even on master, but the policy allows
+`vfork` on x86_64, so it never raises SIGSYS. busybox `sh` forks via `fork()`.
+
+**arm64 (what phones run).** Points 1 and 2 say aarch64 musl never issues `fork`, and `clone` is allowed. So this bug
+**cannot** occur on arm64, even with the old binaries. Hosted runners **cannot** run an arm64 Android emulator.
+The `ubuntu-24.04-arm` image lists "Android SDK" under *"Tools that are not supported on Arm architecture"*
+(actions/partner-runner-images, `arm-ubuntu-24-image.md`), and arm64 system images would need nested KVM there.
+The `arm64-proot` CI job is the closest honest substitute: same binaries, same rootfs and same flags, but no Android sandbox.
 
 ---
 
@@ -153,13 +202,16 @@ the **`LinuxInApp-debug-apk`** artifact.
 3. First launch: the status bar shows "Installing Alpine rootfs…" for a few seconds, then "ready", and a `#` prompt appears.
 4. Tap **Self-test**. Expected dialog:
    ```
-   SELF-TEST PASS  (exit=0, … ms)
-   Linux localhost 6.x.x-android… aarch64 Linux
-   ---
-   NAME="Alpine Linux"  … VERSION_ID=3.24.4 …
-   ---
-   uid=0(root) gid=0(root) …
+   SELF-TEST PASS  (6/6 steps, … ms, abi=arm64-v8a)
+
+   [ok] builtin-echo (exit=0, … ms) :: builtin-ok
+   [ok] exec-uname-m (exit=0, … ms) :: aarch64
+   [ok] fork-probe (exit=0, … ms) :: fork-ok
+   [ok] uname-a (exit=0, … ms) :: Linux localhost 6.x.x-android… aarch64 Linux
+   [ok] os-release (exit=0, … ms) :: NAME="Alpine Linux"
+   [ok] id (exit=0, … ms) :: uid=0(root) gid=0(root) …
    ```
+   Each step is its own proot run, so a failure names its step and its exact error line.
    If it says FAIL, use **Copy** and send the text. The dialog includes preflight (do the libs exist, are they executable)
    and the exact argv. Also useful: `adb logcat -s LinuxInAppSelfTest:* LinuxInApp:* RootfsInstaller:*` and
    `adb logcat | grep avc` for SELinux denials.

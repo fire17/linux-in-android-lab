@@ -167,10 +167,19 @@ class MainActivity : Activity() {
             val launcher = ProotLauncher(this)
             val pre = launcher.preflight().joinToString("\n")
             val text = try {
-                val r = launcher.runOnce(ProotLauncher.SELF_TEST_SCRIPT, timeoutSec = 60)
-                val verdict = if (r.exitCode == 0 && r.output.contains("Alpine", ignoreCase = true) && r.output.contains("uid=0"))
-                    "PASS" else "FAIL"
-                "SELF-TEST $verdict  (exit=${r.exitCode}, ${r.millis} ms)\n\n${r.output}\n--- preflight ---\n$pre\n\n--- argv ---\n${r.command.joinToString(" ")}"
+                // One proot run per step, so e.g. a fork failure can't hide whether exec works.
+                val steps = launcher.runSelfTestSteps(timeoutSec = 60)
+                val out = steps.associate { it.name to it.result.output }
+                val verdict = if (steps.all { it.ok } &&
+                    out["os-release"].orEmpty().contains("Alpine", ignoreCase = true) &&
+                    out["id"].orEmpty().contains("uid=0")) "PASS" else "FAIL"
+                val totalMs = steps.sumOf { it.result.millis }
+                val summary = steps.joinToString("\n") { s ->
+                    "[${if (s.ok) "ok" else "FAIL"}] ${s.name} (exit=${s.result.exitCode}, ${s.result.millis} ms) :: ${s.firstLine}"
+                }
+                val details = steps.joinToString("\n") { "--- ${it.name}: ${it.script}\n${it.result.output.trimEnd()}" }
+                "SELF-TEST $verdict  (${steps.count { it.ok }}/${steps.size} steps, $totalMs ms, abi=${Build.SUPPORTED_ABIS.first()})\n\n" +
+                    "$summary\n\n$details\n--- preflight ---\n$pre\n\n--- argv ---\n${steps.first().result.command.joinToString(" ")}"
             } catch (t: Throwable) {
                 "SELF-TEST FAIL: ${t.javaClass.simpleName}: ${t.message}\n\n--- preflight ---\n$pre"
             }

@@ -73,8 +73,11 @@ jobs:
           if-no-files-found: warn
 
   # Best-effort on-device proof: boots an x86_64 emulator and runs the same self-test as the
-  # in-app button (uname/os-release/id under proot). Non-blocking: the APK artifact above is the
-  # deliverable; this job tells us whether proot actually runs.
+  # in-app button, ONE proot run per step (builtin echo, exec uname -m, fork probe, uname -a,
+  # os-release, id). Non-blocking: the APK artifact above is the deliverable; this job tells us
+  # whether proot actually runs inside a real Android app sandbox (zygote seccomp + untrusted_app
+  # SELinux). x86_64 matters here because Android's app seccomp policy rejects fork(2) on x86_64 and
+  # musl calls it there; proot >= 5.1.107.98 rewrites it to clone(2) (see README).
   emulator-selftest:
     needs: apk
     runs-on: ubuntu-latest
@@ -117,6 +120,70 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           working-directory: ${{ env.APP_DIR }}
+          # NOTE: the runner executes each line as its own `sh -c`, so every line is self-contained.
           script: |
-            gradle --no-daemon connectedDebugAndroidTest || (adb logcat -d | grep -E 'LinuxInApp|proot|avc' | tail -200; exit 1)
-            adb logcat -d -s LinuxInAppSelfTest:* | tail -80
+            adb logcat -c || true
+            gradle --no-daemon connectedDebugAndroidTest > /tmp/selftest-gradle.log 2>&1; echo $? > /tmp/selftest-rc
+            adb logcat -d -s LinuxInAppSelfTest:* > /tmp/selftest-logcat.txt 2>&1 || true
+            adb logcat -d | grep -E 'LinuxInApp|libproot|proot|avc.*linuxinapp' | tail -200 > /tmp/selftest-context.txt 2>&1 || true
+            adb shell getprop ro.product.cpu.abi > /tmp/selftest-abi.txt 2>&1 || true
+
+      - name: Report self-test (each step + the exact failure line)
+        if: always()
+        run: |
+          rc="$(cat /tmp/selftest-rc 2>/dev/null || echo missing)"
+          echo "connectedDebugAndroidTest exit code: $rc"
+          echo "emulator ABI: $(cat /tmp/selftest-abi.txt 2>/dev/null || echo '?')"
+          echo "================ self-test steps (logcat LinuxInAppSelfTest) ================"
+          grep -E 'device:|STEP |  [a-z0-9-]+\| |SUMMARY|libproot.so:|nativeLibraryDir|rootfs' /tmp/selftest-logcat.txt \
+            | sed -E 's/^.*LinuxInAppSelfTest: //' || echo "(no LinuxInAppSelfTest lines - did the test even start?)"
+          echo "================ failure lines ================"
+          grep -hE "can't fork|Function not implemented|not implemented|Bad system call|SIGSYS|denied|No such file|cannot|can't" \
+            /tmp/selftest-logcat.txt /tmp/selftest-context.txt | sed -E 's/^.*LinuxInAppSelfTest: //' | sort -u | head -40 || true
+          # Annotations so the exact failing step + line show on the run page without opening logs.
+          grep -E 'STEP .* exit=' /tmp/selftest-logcat.txt | grep -v ' exit=0 ' | sed -E 's/^.*LinuxInAppSelfTest: //' \
+            | while read -r line; do echo "::error title=proot self-test (x86_64 emulator)::$line"; done || true
+          {
+            echo "### proot self-test on x86_64 emulator (API 34)"
+            echo '```'
+            grep -E 'STEP |SUMMARY' /tmp/selftest-logcat.txt | sed -E 's/^.*LinuxInAppSelfTest: //' || echo "no STEP lines"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" != "0" ]; then
+            echo "---------------- gradle tail ----------------"; tail -60 /tmp/selftest-gradle.log || true
+            echo "---------------- logcat context ----------------"; cat /tmp/selftest-context.txt || true
+            exit 1
+          fi
+
+  # arm64 is what real phones run, and hosted runners can't boot an arm64 Android emulator (no
+  # Android SDK / emulator on the arm64 image, no nested KVM). Next best honest check: run the EXACT
+  # arm64-v8a jniLibs + Alpine aarch64 rootfs, with ProotLauncher's flags/env, inside Termux's
+  # Android-userland Docker image on a native arm64 runner. Proves the binaries, the loader, the
+  # talloc soname patch and aarch64 musl fork-under-proot. Does NOT prove Android's app sandbox
+  # (stock Linux kernel, no zygote seccomp, no SELinux) - see README.
+  arm64-proot:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: ${{ env.APP_DIR }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch pinned binaries (same script as the APK job)
+        run: bash scripts/fetch-all.sh
+
+      - name: Run proot self-test steps (arm64-v8a jniLibs, Alpine aarch64) in termux-docker
+        run: |
+          set +e
+          docker run --rm --privileged -v "$PWD:/work:ro" -e WORK_DIR=/work \
+            termux/termux-docker:aarch64 bash /work/scripts/ci-arm64-proot.sh 2>&1 | tee /tmp/arm64.log
+          rc=${PIPESTATUS[0]}
+          {
+            echo "### proot self-test, arm64 (termux-docker, NOT an Android app sandbox)"
+            echo '```'; grep -E 'host uname -m|STEP |SUMMARY' /tmp/arm64.log || echo "no STEP lines"; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'STEP .* exit=' /tmp/arm64.log | grep -v ' exit=0 ' \
+            | while read -r line; do echo "::error title=proot self-test (arm64 termux-docker)::$line"; done || true
+          exit $rc
