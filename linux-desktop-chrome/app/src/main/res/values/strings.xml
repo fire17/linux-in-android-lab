@@ -5,6 +5,7 @@
     <string name="ld_channel_name">LinuxDesk session</string>
     <string name="ld_mic_switch">Microphone to Linux</string>
     <string name="ld_mic_help">Off by default. When on, Linux apps (e.g. Chromium) hear this phone\'s microphone. Only this switch can turn it on; the genie cannot. Turns off when the session ends. Nothing is recorded to disk.</string>
+    <string name="ld_opt_mic_background">Allow microphone in background (off: the mic pauses when you leave LinuxDesk, so other apps can record)</string>
     <string name="ld_mic_on_text">Microphone on · Linux can hear this phone</string>
     <string name="ld_mic_stop">Stop microphone</string>
     <string name="ld_mic_denied">Microphone permission was not granted, so the microphone stays off.</string>

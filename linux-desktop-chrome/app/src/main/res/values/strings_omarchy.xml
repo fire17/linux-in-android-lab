@@ -23,4 +23,9 @@
     <string name="ld_omarchy_retry">Retry</string>
     <string name="ld_omarchy_open_desktop">Open desktop</string>
     <string name="ld_omarchy_back">Back</string>
+    <string name="ld_omarchy_retry_from">Retry from step %1$d</string>
+    <string name="ld_omarchy_failed_at">Stopped at step %1$d of %2$d: %3$s</string>
+    <string name="ld_omarchy_retrying_from">Retrying from step %1$d: %2$s (finished steps are skipped)</string>
+    <string name="ld_keybar_hide">Hide the key bar (Super, Space…)</string>
+    <string name="ld_keybar_show">Show the key bar (Super, Space…)</string>
 </resources>

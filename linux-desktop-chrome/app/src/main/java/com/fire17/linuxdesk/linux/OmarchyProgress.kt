@@ -15,7 +15,8 @@ package com.fire17.linuxdesk.linux
  *          "(3/119) installing xkeyboard-config"          → the same, tty form
  *          " google-chrome-158…-aarch64 downloading..."    → a download is in flight
  *          "error: failed retrieving file … 404"          → kept as the last error line for the failure view
- *      plus "[omarchy] i3 started" (boot) and "LINUXDESK_WINDOW_UP" (start-omarchy.sh) = the desktop is on screen.
+ *      plus "[omarchy] i3 started" (boot) and "LINUXDESK_WINDOW_UP" (start-omarchy.sh) = the desktop is on screen,
+ *      and "LINUXDESK_STAGE_FAILED <n>/<total> <title> (exit <rc>)" (setup-omarchy.sh's EXIT trap) = where it stopped.
  *
  * Overall bar weights: download 0–35 %, extract 35–45 %, setup 45–95 % (spread across the script's stages, and
  * inside a pacman stage by installed/total packages), boot 95–100 %.
@@ -34,7 +35,19 @@ class OmarchyProgress {
         val stageTotal: Int = 0,
         /** The last pacman/script error line, "" when none. Shown when the session ends in ERROR. */
         val error: String = "",
+        /** The stage setup-omarchy.sh stopped in (LINUXDESK_STAGE_FAILED), null while none failed. */
+        val failed: Failure? = null,
     )
+
+    /** Where a setup run stopped: stage [index] of [total], its [title], and the most specific [error] line. */
+    data class Failure(val index: Int, val total: Int, val title: String, val error: String)
+
+    /**
+     * The last failure, kept across [reset] (Retry starts a new run, but the screen still says what it retries).
+     * Cleared by [clearLastFailure] once the setup gets past that stage or the desktop is up.
+     */
+    @Volatile var lastFailure: Failure? = null
+        private set
 
     @Volatile var snapshot = Snapshot(0, "Starting …", "")
         private set
@@ -52,6 +65,8 @@ class OmarchyProgress {
         snapshot = Snapshot(0, "Starting …", "")
     }
 
+    @Synchronized fun clearLastFailure() { lastFailure = null }
+
     @Synchronized fun onDownload(pct: Int) {
         val p = pct.coerceIn(0, 100)
         set(p * 35 / 100, "Downloading Arch Linux ARM ($p %)", "", Phase.DOWNLOAD)
@@ -65,11 +80,20 @@ class OmarchyProgress {
     /** Feeds one log line. Returns true when the line changed the snapshot. */
     @Synchronized fun onLine(raw: String): Boolean {
         val line = raw.trimEnd()
+        FAILED.matchEntire(line)?.let { m ->
+            val f = Failure(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3],
+                lastError.ifEmpty { line })
+            lastFailure = f
+            snapshot = snapshot.copy(failed = f, error = f.error)
+            return true
+        }
         STAGE.matchEntire(line)?.let { m ->
             stageIdx = m.groupValues[1].toInt()
             stageTotal = m.groupValues[2].toInt().coerceAtLeast(1)
             stageText = m.groupValues[3]
             pkgTotal = 0; pkgDone = 0
+            // A retry that got past the stage which failed last time: that failure is history.
+            lastFailure?.let { if (stageIdx > it.index) lastFailure = null }
             set(setupPercent(), stageText, "", Phase.SETUP)
             return true
         }
@@ -109,6 +133,7 @@ class OmarchyProgress {
             return true
         }
         if (line.startsWith("LINUXDESK_WINDOW_UP")) {
+            lastFailure = null
             set(100, "Omarchy is up", "", Phase.UP)
             return true
         }
@@ -134,7 +159,7 @@ class OmarchyProgress {
         // Never go backwards (a later pacman transaction, or a re-run of an earlier stage, must not shrink the bar).
         val p = maxOf(pct, snapshot.percent).coerceIn(0, 100)
         val ph = if (phase.ordinal < snapshot.phase.ordinal) snapshot.phase else phase
-        snapshot = Snapshot(p, stage, detail, ph, stageIdx, if (stageIdx > 0) stageTotal else 0, lastError)
+        snapshot = Snapshot(p, stage, detail, ph, stageIdx, if (stageIdx > 0) stageTotal else 0, lastError, snapshot.failed)
     }
 
     companion object {
@@ -142,6 +167,7 @@ class OmarchyProgress {
         /** Measured 2026-11-19: ~146 upgrades + 15 removals + ~120–190 new packages in a full first-run setup. */
         const val SETUP_PKGS = 330
         private val STAGE = Regex("""LINUXDESK_STAGE (\d+)/(\d+) (.+)""")
+        private val FAILED = Regex("""LINUXDESK_STAGE_FAILED (\d+)/(\d+) (.+?)(?: \(exit \d+\))?""")
         private val PACKAGES = Regex("""^Packages \((\d+)\)""")
         private val INSTALLING =
             Regex("""^(?:\(\s*\d+/\d+\)\s+)?(installing|upgrading|reinstalling|removing) (\S+?)(?:\.\.\.)?$""")

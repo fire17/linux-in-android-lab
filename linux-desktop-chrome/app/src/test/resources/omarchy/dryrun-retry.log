@@ -1,0 +1,14 @@
+[omarchy]  on arm64
+LINUXDESK_STAGE 1/7 Configuring pacman for PRoot
+[omarchy] stage 1 already done; skipped
+LINUXDESK_STAGE 2/7 Initialising the pacman keyring
+[omarchy] stage 2 already done; skipped
+LINUXDESK_STAGE 3/7 Updating Arch Linux ARM (full upgrade)
+[omarchy] stage 3 already done; skipped
+LINUXDESK_STAGE 4/7 Adding the Omarchy repository
+[omarchy] stage 4 already done; skipped
+LINUXDESK_STAGE 5/7 Installing Chrome, i3, fonts and tools
+LINUXDESK_STAGE 6/7 Installing the Omarchy themes
+[omarchy] Omarchy themes installed from omarchy-4.5.0-3-aarch64.pkg.tar.zst
+LINUXDESK_STAGE 7/7 Applying the Omarchy look
+[omarchy] done: Google Chrome 158, i3 4.25.1

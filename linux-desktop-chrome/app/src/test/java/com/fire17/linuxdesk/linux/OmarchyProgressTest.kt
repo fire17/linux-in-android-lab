@@ -75,6 +75,51 @@ class OmarchyProgressTest {
         assertFalse(OmarchyRun.setupShown)
     }
 
+    @Test fun stageFailureIsParsedAndSurvivesTheRetryReset() {
+        val p = OmarchyProgress()
+        p.onLine("LINUXDESK_STAGE 5/7 Installing Chrome, i3, fonts and tools")
+        p.onLine("error: failed retrieving file 'mesa-1:26.1.6-1-aarch64.pkg.tar.xz' from de3.mirror.archlinuxarm.org : The requested URL returned error: 404")
+        p.onLine("error: failed to commit transaction (failed to retrieve some files)")
+        p.onLine("[omarchy] no browser binary after install (google-chrome-stable / chromium)")
+        assertTrue(p.onLine("LINUXDESK_STAGE_FAILED 5/7 Installing Chrome, i3, fonts and tools (exit 3)"))
+        val f = p.snapshot.failed!!
+        assertEquals(5, f.index); assertEquals(7, f.total)
+        assertEquals("Installing Chrome, i3, fonts and tools", f.title)
+        assertTrue(f.error, f.error.contains("mesa") && f.error.contains("404"))
+        // Retry: a fresh run, but the screen still knows what it is retrying.
+        p.reset()
+        assertEquals(null, p.snapshot.failed)
+        assertEquals(5, p.lastFailure!!.index)
+        // The re-run prints every stage line (done ones are skipped); passing stage 5 clears the old failure.
+        for (n in 1..5) p.onLine("LINUXDESK_STAGE $n/7 stage $n")
+        assertEquals(5, p.lastFailure!!.index)
+        p.onLine("LINUXDESK_STAGE 6/7 Installing the Omarchy themes")
+        assertEquals(null, p.lastFailure)
+    }
+
+    @Test fun stageFailureWithoutAnErrorLineUsesTheMarkerItself() {
+        val p = OmarchyProgress()
+        p.onLine("LINUXDESK_STAGE 3/7 Updating Arch Linux ARM (full upgrade)")
+        p.onLine("LINUXDESK_STAGE_FAILED 3/7 Updating Arch Linux ARM (full upgrade) (exit 2)")
+        assertEquals("Updating Arch Linux ARM (full upgrade)", p.snapshot.failed!!.title)
+        assertTrue(p.snapshot.error.startsWith("LINUXDESK_STAGE_FAILED 3/7"))
+        p.onLine("LINUXDESK_WINDOW_UP 968x2179")
+        assertEquals(null, p.lastFailure)
+    }
+
+    /** The REAL dry-run output of setup-omarchy.sh (stubbed pacman) when stage 5's installs fail, then the Retry. */
+    @Test fun dryRunFailThenRetryOutput() {
+        val p = OmarchyProgress()
+        resource("/omarchy/dryrun-fail-stage5.log").forEach { p.onLine(it) }
+        assertEquals(5, p.snapshot.failed!!.index)
+        assertEquals(73, p.snapshot.percent)        // 45 + 50 * 4/7 = 73.6, floored: the start of stage 5
+        p.reset()
+        resource("/omarchy/dryrun-retry.log").forEach { p.onLine(it) }
+        assertEquals(null, p.snapshot.failed); assertEquals(null, p.lastFailure)
+        assertEquals(7, p.snapshot.stageIndex)
+        assertEquals(87, p.snapshot.percent)        // start of stage 7 (45 + 50 * 6/7); the stub prints no pacman lines
+    }
+
     // ---- Replays of the REAL session log from Tami's phone (2026-11-19 21:14; Omarchy first run, mirror 404s). ----
 
     /** The phone run used the build before the LINUXDESK_STAGE markers: no markers at all. */
@@ -143,9 +188,11 @@ class OmarchyProgressTest {
         assertTrue(seen.all { it.percent in 0..95 })    // never "done" without LINUXDESK_WINDOW_UP
     }
 
-    private fun phoneLog(): List<String> {
-        val r = javaClass.getResource("/omarchy/phone-2114-session.log")
-        assertNotNull("test resource omarchy/phone-2114-session.log", r)
+    private fun phoneLog(): List<String> = resource("/omarchy/phone-2114-session.log")
+
+    private fun resource(path: String): List<String> {
+        val r = javaClass.getResource(path)
+        assertNotNull("test resource $path", r)
         return r!!.readText().lines()
     }
 

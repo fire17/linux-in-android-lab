@@ -236,6 +236,13 @@
             android:text="@string/ld_mic_help"
             android:textSize="12sp" />
 
+        <!-- Foreground-only mic (audio/MicForeground.kt). Default OFF = the mic pauses when LinuxDesk leaves the screen. -->
+        <CheckBox
+            android:id="@+id/opt_mic_background"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_opt_mic_background" />
+
         <!-- Phone camera for Linux (camera/CameraServer.kt). Default OFF, never persisted, resets when the session ends. -->
         <Switch
             android:id="@+id/opt_camera"

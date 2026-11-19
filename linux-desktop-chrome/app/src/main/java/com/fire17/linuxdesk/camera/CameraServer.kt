@@ -121,6 +121,21 @@ class CameraServer(
                 ?: sizes.firstOrNull()
 
         private fun jsonStr(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+        /** [Cam]s → CameraSelect → the same cams, default first, then the generic order. Pure; testable. */
+        fun orderCams(found: List<Cam>): List<Cam> {
+            val parents = found.filter { it.physicalOf != null }.groupBy { it.physicalOf!! }
+            val lenses = found.map { c ->
+                CameraSelect.Lens(c.id, when (c.facing) {
+                    CameraCharacteristics.LENS_FACING_BACK -> CameraSelect.Facing.BACK
+                    CameraCharacteristics.LENS_FACING_FRONT -> CameraSelect.Facing.FRONT
+                    CameraCharacteristics.LENS_FACING_EXTERNAL -> CameraSelect.Facing.EXTERNAL
+                    else -> CameraSelect.Facing.UNKNOWN
+                }, c.focalMm, c.physicalOf, parents[c.id]?.map { it.id } ?: emptyList())
+            }
+            val byKey = found.associateBy { it.id + "@" + (it.physicalOf ?: "") }
+            return CameraSelect.choose(lenses).ordered.mapNotNull { byKey[it.id + "@" + (it.physicalOf ?: "")] }
+        }
     }
 
     /** One exposed camera. [physicalOf] = the logical camera it is opened through (null = open [id] directly). */
@@ -150,7 +165,7 @@ class CameraServer(
     /** Every camera this phone can stream, back ones first. */
     fun inventory(): List<Cam> {
         val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val ids = try { cm.cameraIdList.toList() } catch (e: Exception) { Log.w(TAG, "cameraIdList: $e"); emptyList() }
+        val ids = try { cm.cameraIdList.toList() } catch (e: Exception) { Log.w(TAG, "cameraIdList: $e"); CameraLog.error("-", "list", e); emptyList() }
         val out = ArrayList<Cam>()
         for (id in ids) {
             val ch = try { cm.getCameraCharacteristics(id) } catch (_: Exception) { continue }
@@ -166,8 +181,11 @@ class CameraServer(
                 }
             }
         }
-        return out.sortedBy { if (it.facing == CameraCharacteristics.LENS_FACING_BACK) 0 else 1 }
+        return order(out)
     }
+
+    /** v4: order + default from the generic rules (CameraSelect), default first. Pure over [Cam]s; testable. */
+    fun order(found: List<Cam>): List<Cam> = orderCams(found)
 
     /** v1 compatibility: the first back camera id, or null. */
     fun backCameraId(): String? = inventory().firstOrNull { it.facing == CameraCharacteristics.LENS_FACING_BACK }?.id
@@ -326,11 +344,16 @@ class CameraServer(
 
         private fun publish(jpeg: ByteArray) = synchronized(lock) { latest = jpeg; seq++; lock.notifyAll() }
 
-        private fun fail(why: String) {
-            Log.w(TAG, "camera ${cam.id}: $why")
+        private fun fail(stage: String, e: Throwable? = null, detail: String? = null) {
+            Log.w(TAG, "camera ${cam.id}: $stage ${e ?: detail ?: ""}")
+            CameraLog.error(cam.id, stage, e, detail)   // → sys.logs, so the lead's pulls see it
             failed = true
             close()
         }
+
+        /** JPEG failures can repeat every frame: log the first one per open, not 15 a second. */
+        @Volatile private var jpegLogged = false
+        private fun jpegError(e: Exception) { if (!jpegLogged) { jpegLogged = true; CameraLog.error(cam.id, "jpeg", e) } }
 
         private fun cancelPendingClose() {
             pendingClose?.let { camHandler?.removeCallbacks(it) }
@@ -351,7 +374,7 @@ class CameraServer(
             reader = r
             r.setOnImageAvailableListener({ rd ->
                 val img = rd.acquireLatestImage() ?: return@setOnImageAvailableListener
-                try { publish(toJpeg(img)) } catch (e: Exception) { Log.w(TAG, "jpeg: $e") } finally { img.close() }
+                try { publish(toJpeg(img)) } catch (e: Exception) { Log.w(TAG, "jpeg: $e"); jpegError(e) } finally { img.close() }
             }, camHandler)
             val openId = cam.physicalOf ?: cam.id
             try {
@@ -362,10 +385,10 @@ class CameraServer(
                         configure(cd, r)
                     }
                     override fun onDisconnected(cd: CameraDevice) { cd.close(); device = null; fail("disconnected") }
-                    override fun onError(cd: CameraDevice, error: Int) { cd.close(); device = null; fail("error $error") }
+                    override fun onError(cd: CameraDevice, error: Int) { cd.close(); device = null; fail("device_error", detail = "CameraDevice error $error") }
                 }, camHandler)
             } catch (e: Exception) {
-                fail("openCamera: $e")
+                fail("open", e)
             }
         }
 
@@ -379,9 +402,9 @@ class CameraServer(
                         rb.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(15, 15))
                         s.setRepeatingRequest(rb.build(), null, camHandler)
                         Log.i(TAG, "camera ${cam.id} streaming ${cam.size.first}x${cam.size.second}")
-                    } catch (e: Exception) { fail("repeat: $e") }
+                    } catch (e: Exception) { fail("repeat", e) }
                 }
-                override fun onConfigureFailed(s: CameraCaptureSession) { fail("configure failed") }
+                override fun onConfigureFailed(s: CameraCaptureSession) { fail("configure", detail = "onConfigureFailed") }
             }
             try {
                 if (Build.VERSION.SDK_INT >= 28) {
@@ -393,7 +416,7 @@ class CameraServer(
                     cd.createCaptureSession(listOf(r.surface), cb, camHandler)
                 }
             } catch (e: Exception) {
-                fail("session: $e")
+                fail("session", e)
             }
         }
 

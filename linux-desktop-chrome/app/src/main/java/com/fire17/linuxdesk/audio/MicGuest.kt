@@ -51,10 +51,16 @@ object MicGuest {
         """.trimIndent()
     }
 
-    /** Unloads every mic module this file ever loads (matched by our names/port args, not by remembered ids). */
+    /** Unloads every mic module this file ever loads (matched by our names/port args, not by remembered ids), then
+     *  gives the default source back to [FALLBACK_SOURCE]. */
     fun unloadScript(): String = "export PULSE_SERVER=${PulseHost.PULSE_SERVER}\n" + unloadBody()
+
+    /** The source Linux records from while the phone mic is not loaded: PulseHost's silent placeholder, NEVER
+     *  ld.monitor (that was the 21:40 digital loopback: pages "recording the mic" heard the speakers). */
+    const val FALLBACK_SOURCE = PulseHost.NO_MIC_SOURCE
 
     private fun unloadBody() = """
         for id in ${'$'}(pactl list short modules 2>/dev/null | awk '/module-simple-protocol-tcp.*sink=$SINK |module-remap-source.*source_name=$SOURCE |module-null-sink.*sink_name=$SINK /{print ${'$'}1}'); do pactl unload-module "${'$'}id" || true; done
+        pactl set-default-source $FALLBACK_SOURCE || true
     """.trimIndent()
 }

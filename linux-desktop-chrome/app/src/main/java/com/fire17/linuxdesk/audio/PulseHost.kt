@@ -25,6 +25,9 @@ import java.util.concurrent.TimeUnit
  *   - module-native-protocol-unix on [SOCKET_GUEST] (guest path; host path = rootfs/[SOCKET_GUEST]), anonymous
  *     auth: only processes that can reach the app's private files dir (= the app's own uid) can connect.
  *   - module-null-sink sink_name=[SINK] — Chromium plays into it (PULSE_SINK=ld in [guestEnv]).
+ *   - module-null-sink [NO_MIC_SINK] + module-remap-source [NO_MIC_SOURCE] — a silent source, made the default
+ *     at start (and again by [MicGuest] when the phone mic goes OFF). Without it the only source is ld.monitor,
+ *     so a page recording "the microphone" would hear the speakers: a feedback loop. Default sink stays [SINK].
  *
  * Security caveat (same as spec 02 #1 / #5): modules that listen on TCP (module-simple-protocol-tcp) have NO
  * auth. They must bind 127.0.0.1 only, on a port from [freeLoopbackPort] (random 20000–60000, fresh each
@@ -37,6 +40,9 @@ import java.util.concurrent.TimeUnit
  */
 object PulseHost {
     const val SINK = "ld"
+    /** Silent placeholder: the default source while the phone mic is off, so nothing ever records [SINK].monitor. */
+    const val NO_MIC_SINK = "nomic"
+    const val NO_MIC_SOURCE = "no-mic"
     const val SOCKET_DIR_GUEST = "/tmp/linuxdesk-pulse"
     const val SOCKET_GUEST = "$SOCKET_DIR_GUEST/native"
     const val PULSE_SERVER = "unix:$SOCKET_GUEST"
@@ -106,8 +112,10 @@ object PulseHost {
             val t0 = System.currentTimeMillis()
             while (System.currentTimeMillis() - t0 < 8_000 && !sock.exists() && proc?.isAlive == true) Thread.sleep(100)
             running = sock.exists() && proc?.isAlive == true
-            if (running) log("up (${System.currentTimeMillis() - t0} ms), owners=${needs.keys.sorted()}")
-            else log("did not come up within 8 s; continuing without sound")
+            if (running) {
+                log("up (${System.currentTimeMillis() - t0} ms), owners=${needs.keys.sorted()}")
+                pactl("set-default-source", NO_MIC_SOURCE)
+            } else log("did not come up within 8 s; continuing without sound")
             running
         } catch (t: Throwable) {
             log("start failed (${t.javaClass.simpleName}: ${t.message}); continuing without sound")
@@ -142,12 +150,17 @@ object PulseHost {
 
     private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
 
+    /** The modules every PulseAudio start loads, before any owner's. */
+    internal fun fixedLoads(): List<String> = listOf(
+        "module-native-protocol-unix socket=$SOCKET_GUEST auth-anonymous=1",
+        "module-null-sink sink_name=$SINK rate=48000 channels=2 sink_properties=device.description=LinuxDesk",
+        "module-null-sink sink_name=$NO_MIC_SINK rate=48000 channels=1 sink_properties=device.description=No-Microphone-Sink",
+        "module-remap-source master=$NO_MIC_SINK.monitor source_name=$NO_MIC_SOURCE source_properties=device.description=No-Microphone",
+    )
+
     private fun launchLocked() {
         val p = proot ?: return
-        val loads = mutableListOf(
-            "module-native-protocol-unix socket=$SOCKET_GUEST auth-anonymous=1",
-            "module-null-sink sink_name=$SINK rate=48000 channels=2 sink_properties=device.description=LinuxDesk",
-        )
+        val loads = fixedLoads().toMutableList()
         needs.values.forEach { loads += it.modules }
         val script = buildString {
             append("mkdir -p /tmp/runtime-root $SOCKET_DIR_GUEST && chmod 700 /tmp/runtime-root $SOCKET_DIR_GUEST; ")
@@ -184,12 +197,20 @@ object PulseHost {
             log("exited (code $code); restarting in 2 s")
         }
         try { Thread.sleep(2_000) } catch (_: InterruptedException) { return }
-        synchronized(lock) {
+        val relaunched = synchronized(lock) {
             if (wanted && proc == null) {
                 launchLocked()
                 // Same socket path and ports, so the browser and AudioOut reconnect on their own.
                 running = proc?.isAlive == true
-            }
+                running
+            } else false
+        }
+        // Live-loaded mic modules died with the old daemon: the silent source is the right default again.
+        if (relaunched) {
+            val sock = File(proot?.rootfsDir ?: return, SOCKET_GUEST.removePrefix("/"))
+            val t0 = System.currentTimeMillis()
+            while (System.currentTimeMillis() - t0 < 8_000 && !sock.exists()) Thread.sleep(100)
+            pactl("set-default-source", NO_MIC_SOURCE)
         }
     }
 

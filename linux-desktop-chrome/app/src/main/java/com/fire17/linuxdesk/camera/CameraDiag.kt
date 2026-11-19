@@ -82,6 +82,20 @@ object CameraDiag {
 
     private fun sz(p: Pair<Int, Int>?) = p?.let { "${it.first}x${it.second}" } ?: "-"
 
+    /** Diag entry → the generic selector's input. Pure; testable. */
+    fun toLens(e: Entry) = CameraSelect.Lens(
+        id = e.id,
+        facing = when (e.facing) { "back" -> CameraSelect.Facing.BACK; "front" -> CameraSelect.Facing.FRONT
+            "external" -> CameraSelect.Facing.EXTERNAL; else -> CameraSelect.Facing.UNKNOWN },
+        focalMm = e.focalMm.firstOrNull(),
+        physicalOf = e.physicalOf,
+        physicalIds = e.physicalIds,
+        streamable = e.streamSize != null && e.why?.startsWith("characteristics") != true,
+    )
+
+    /** The generic choice (CameraSelect) over this device's entries: ordered exposed ids + default. Pure; testable. */
+    fun select(list: List<Entry>): CameraSelect.Choice = CameraSelect.choose(list.map { toLens(it) })
+
     /** One line per camera, monospace-friendly. Pure; testable. */
     fun summary(list: List<Entry>): String = buildString {
         val shown = list.count { it.exposed }
@@ -116,6 +130,10 @@ object CameraDiag {
                 e.focalMm.firstOrNull(), e.id, e.physicalOf))
             arr.put(o)
         }
+        val sel = select(list)
         return JSONObject().put("cameras", arr).put("exposed", list.count { it.exposed }).put("ids", list.size)
+            .put("default", sel.default?.id ?: JSONObject.NULL)
+            .put("order", JSONArray(sel.ordered.map { it.id }))
+            .put("hidden", JSONObject(sel.hidden as Map<*, *>))
     }
 }

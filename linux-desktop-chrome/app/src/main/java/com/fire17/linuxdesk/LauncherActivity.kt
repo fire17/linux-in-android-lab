@@ -128,6 +128,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         bindCheck(R.id.opt_gpu, settings.useGpu) { settings.useGpu = it }
         bindGpuSupport()   // GPU v2: grey out + explain on phones without an Adreno/KGSL GPU
         bindCheck(R.id.opt_sound, settings.sound) { settings.sound = it }
+        bindCheck(R.id.opt_mic_background, settings.micInBackground) { settings.micInBackground = it }   // live: read on each background edge
 
         // Microphone to Linux: the ONLY place consent can become true. RECORD_AUDIO is asked for only here, only
         // when the person turns it ON. Deliberately no autostart/intent extra can flip it.

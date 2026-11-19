@@ -41,6 +41,13 @@ class CameraDiagTest {
         assertTrue(j.getJSONArray("cameras").getJSONObject(0).isNull("physical_of"))
     }
 
+    @Test fun jsonCarriesGenericDefaultAndOrder() {
+        val j = CameraDiag.json(fold)
+        assertEquals("0", j.getString("default"))
+        assertEquals("[\"0\",\"2\",\"3\",\"4\",\"1\"]", j.getJSONArray("order").toString())
+        assertTrue(j.getJSONObject("hidden").has("2@0"))
+    }
+
     @Test fun unknownFocalIsShownNotGuessed() {
         assertTrue(CameraDiag.summary(listOf(e("7", "external", null))).contains("#7 external f=? single"))
     }

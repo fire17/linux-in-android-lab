@@ -1,0 +1,18 @@
+[omarchy]  on arm64
+LINUXDESK_STAGE 1/7 Configuring pacman for PRoot
+LINUXDESK_STAGE 2/7 Initialising the pacman keyring
+[omarchy] pacman-key --init (generates a local key; can take a minute under proot)
+LINUXDESK_STAGE 3/7 Updating Arch Linux ARM (full upgrade)
+LINUXDESK_STAGE 4/7 Adding the Omarchy repository
+LINUXDESK_STAGE 5/7 Installing Chrome, i3, fonts and tools
+error: failed retrieving file 'x.pkg.tar.xz' from stub : 404
+error: failed retrieving file 'x.pkg.tar.xz' from stub : 404
+[omarchy] pacman reported errors (often harmless hook failures under PRoot); verifying ...
+error: failed retrieving file 'x.pkg.tar.xz' from stub : 404
+[omarchy] google-chrome failed; trying chromium
+error: failed retrieving file 'x.pkg.tar.xz' from stub : 404
+[omarchy] chromium failed; refreshing the package list and retrying once
+error: failed retrieving file 'x.pkg.tar.xz' from stub : 404
+[omarchy] note: omarchy-nvim not installed
+[omarchy] no browser binary after install (google-chrome-stable / chromium)
+LINUXDESK_STAGE_FAILED 5/7 Installing Chrome, i3, fonts and tools (exit 3)

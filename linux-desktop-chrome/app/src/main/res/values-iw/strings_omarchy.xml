@@ -23,4 +23,9 @@
     <string name="ld_omarchy_retry">נסה שוב</string>
     <string name="ld_omarchy_open_desktop">פתח את שולחן העבודה</string>
     <string name="ld_omarchy_back">חזרה</string>
+    <string name="ld_omarchy_retry_from">נסה שוב משלב %1$d</string>
+    <string name="ld_omarchy_failed_at">נעצר בשלב %1$d מתוך %2$d: %3$s</string>
+    <string name="ld_omarchy_retrying_from">מנסה שוב משלב %1$d: %2$s (שלבים שהסתיימו מדולגים)</string>
+    <string name="ld_keybar_hide">הסתר את סרגל המקשים (Super, Space…)</string>
+    <string name="ld_keybar_show">הצג את סרגל המקשים (Super, Space…)</string>
 </resources>

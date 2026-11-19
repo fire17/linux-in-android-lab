@@ -112,6 +112,10 @@ class RouterTest {
         override fun otaStatus(tail: Int): JSONObject { otaTail = tail
             return JSONObject().put("ok", true).put("active", 3).put("trial", false).put("ledger", JSONArray()) }
         override fun otaCheck(): JSONObject { otaChecks++; return JSONObject().put("ok", true).put("available", true).put("version", 4) }
+        @Volatile var camInfoCalls = 0
+        override fun camerasInfo(): JSONObject { camInfoCalls++
+            return JSONObject().put("ok", true).put("exposed", 2).put("default", "0")
+                .put("cameras", JSONArray().put(JSONObject().put("id", "0")).put(JSONObject().put("id", "1"))) }
         override fun onAppClosed() { appClosedCalls++ }
         override fun log(line: String) { logs += line }
     }
@@ -263,6 +267,22 @@ class RouterTest {
         }
         assertTrue(relay.calls.isEmpty())
         assertFalse(Router.isCameraVerb("calendar.list"))
+    }
+
+    /** v4: the read-only inventory verb is served (no relay, no window gate); capture verbs stay denied. */
+    @Test fun sysCamerasIsReadOnlyAndAllowedWhileCameraVerbsStayDenied() {
+        val w = authed()
+        env.window = false                                   // not window-gated, like the other sys.* reads
+        val r = cmd(w, "sys.cameras", 1)
+        assertTrue(r.toString(), r.optBoolean("ok")); assertEquals("0", r.getString("default"))
+        assertEquals(2, r.getJSONArray("cameras").length()); assertEquals(1, env.camInfoCalls)
+        assertEquals("denied", cmd(w, "camera.start", 2).getString("error"))
+        assertEquals("denied", cmd(w, "cam.list", 3).getString("error"))
+        assertEquals("denied", cmd(w, "camera.sys.cameras", 4).getString("error"))
+        assertEquals("unknown_cmd", cmd(w, "sys.cameras.open", 5).getString("error"))   // no sub-verbs
+        assertEquals(1, env.camInfoCalls)                    // denied verbs never reached the inventory
+        assertTrue(relay.calls.isEmpty())
+        assertFalse(Router.isCameraVerb("sys.cameras"))
     }
 
     @Test fun badJsonKeepsConnectionOpen() {

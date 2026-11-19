@@ -1,6 +1,9 @@
 #!/bin/sh
 # LinuxDesk "Omarchy" first-run setup. Runs INSIDE the Arch Linux ARM aarch64 guest (files/rootfs-arch) under
 # PRoot (fake root). Idempotent; on success writes the marker /etc/linuxdesk/omarchy-v1, which the app checks.
+# Resumable: each finished stage writes /etc/linuxdesk/omarchy-stage-N (content = SETUP_REV), and a re-run (the
+# setup screen's Retry) skips those stages. The package list is still refreshed (-Syy) before the first install
+# stage that runs, so a Retry never installs from a stale list (the 404s of 2026-11-19).
 # Alpine never runs this file (Alpine runs setup-packages.sh, unchanged).
 #
 # What it builds: an Omarchy-FLAVORED desktop, not literal Omarchy (see notes/omarchy-research.json):
@@ -17,12 +20,43 @@
 set -eu
 
 log() { echo "[omarchy] $*"; }
-# LINUXDESK_STAGE lines drive the app's full-screen setup progress bar (OmarchyProgress.kt).
-stage() { echo "LINUXDESK_STAGE $1/7 $2"; }
+# LINUXDESK_STAGE lines drive the app's full-screen setup progress bar (OmarchyProgress.kt). A skipped stage still
+# prints its line (the bar jumps past it). On a failure, LINUXDESK_STAGE_FAILED names the stage that stopped, which
+# the setup screen shows on its Retry button.
+SETUP_REV=1
+MARK=/etc/linuxdesk
+CUR=0
+CUR_TITLE=""
+stage() { CUR=$1; CUR_TITLE=$2; echo "LINUXDESK_STAGE $1/7 $2"; }
+on_exit() {
+  rc=$?
+  if [ "$rc" -ne 0 ] && [ "$CUR" -gt 0 ]; then echo "LINUXDESK_STAGE_FAILED $CUR/7 $CUR_TITLE (exit $rc)"; fi
+}
+trap on_exit EXIT
+# True (and logs) when the current stage finished in an earlier run of this setup revision.
+stage_done() {
+  if [ "$(cat "$MARK/omarchy-stage-$CUR" 2>/dev/null || true)" = "$SETUP_REV" ]; then log "stage $CUR already done; skipped"; return 0; fi
+  return 1
+}
+mark_done() { mkdir -p "$MARK"; echo "$SETUP_REV" > "$MARK/omarchy-stage-$CUR"; }
+# -Syy, not -Sy: force a fresh package list. Tami's phone (2026-11-19 21:12) kept a stale one and every mirror
+# answered 404 for chromium 151 / gtk3 3.24.52-1 / mesa / llvm-libs, which had already been replaced by newer builds.
+# Once per run, before the first install stage that runs; never skipped (stage 4 forces another after adding a repo).
+SYNCED=0
+sync_db() {
+  [ "$SYNCED" = 1 ] && return 0
+  attempt=1
+  until pacman -Syy --noconfirm; do
+    if [ "$attempt" -ge 3 ]; then log "pacman -Sy failed 3 times (no network?)"; exit 2; fi
+    attempt=$((attempt + 1)); log "retrying pacman -Sy in 5s"; sleep 5
+  done
+  SYNCED=1
+}
 log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m)"
 
 # 1. pacman under proot -----------------------------------------------------------------------------------------
 stage 1 "Configuring pacman for PRoot"
+if ! stage_done; then
 #  - DisableSandbox: pacman 7 sandboxes its downloader with Landlock + seccomp and a dropped-privilege user
 #    (DownloadUser = alpm). Under proot's fake root setuid to alpm does not stick and Landlock may be missing,
 #    so downloads fail. Both are turned off (the same fix Local Desktop and proot-distro use).
@@ -46,9 +80,12 @@ Server = https://ca.us.mirror.archlinuxarm.org/$arch/$repo
 Server = https://de3.mirror.archlinuxarm.org/$arch/$repo
 Server = http://mirror.archlinuxarm.org/$arch/$repo
 EOF
+mark_done
+fi
 
 # 2. keyring ---------------------------------------------------------------------------------------------------
 stage 2 "Initialising the pacman keyring"
+if ! stage_done; then
 # pacman-key needs gpg-agent; under proot that works with a plain homedir. Retry once with a fresh keyring.
 if [ ! -s /etc/pacman.d/gnupg/pubring.gpg ] && [ ! -s /etc/pacman.d/gnupg/pubring.kbx ]; then
   log "pacman-key --init (generates a local key; can take a minute under proot)"
@@ -56,25 +93,26 @@ if [ ! -s /etc/pacman.d/gnupg/pubring.gpg ] && [ ! -s /etc/pacman.d/gnupg/pubrin
 fi
 pacman-key --populate archlinuxarm >/dev/null 2>&1 || log "note: populate archlinuxarm reported errors; continuing"
 gpgconf --kill gpg-agent 2>/dev/null || true
+mark_done
+fi
 
 # 3. base sync + upgrade ----------------------------------------------------------------------------------------
 stage 3 "Updating Arch Linux ARM (full upgrade)"
-attempt=1
-# -Syy, not -Sy: force a fresh package list. Tami's phone (2026-11-19 21:12) kept a stale one and every mirror
-# answered 404 for chromium 151 / gtk3 3.24.52-1 / mesa / llvm-libs, which had already been replaced by newer builds.
-until pacman -Syy --noconfirm; do
-  if [ "$attempt" -ge 3 ]; then log "pacman -Sy failed 3 times (no network?)"; exit 2; fi
-  attempt=$((attempt + 1)); log "retrying pacman -Sy in 5s"; sleep 5
-done
+if ! stage_done; then
+sync_db
 # Drop the kernel and firmware packages (their files were never extracted) so -Syu does not try to rebuild an
 # initramfs. Then a full upgrade: Arch does not support partial upgrades.
+# shellcheck disable=SC2046  # one package name per word, intended
 pacman -Rdd --noconfirm linux-aarch64 $(pacman -Qq | grep '^linux-firmware') mkinitcpio mkinitcpio-busybox 2>/dev/null \
   || log "note: kernel/firmware packages were not removed (already gone?)"
 pacman -Su --noconfirm || { log "pacman -Su failed; refreshing the package list and retrying once"; pacman -Syy --noconfirm; pacman -Su --noconfirm; } \
   || log "pacman -Su reported errors (often harmless hook failures under PRoot); verifying later"
+mark_done
+fi
 
 # 4. Omarchy repo ----------------------------------------------------------------------------------------------
 stage 4 "Adding the Omarchy repository"
+if ! stage_done; then
 # Trust bootstrap without a keyserver: fetch omarchy-keyring (6.9 KB) by its PINNED sha256 (from omarchy.db,
 # checked 2026-11-19), install it as a local file (its scriptlet runs `pacman-key --populate omarchy`), and check the
 # expected fingerprint. From then on the [omarchy] repo uses pacman's default SigLevel (signed packages required).
@@ -93,10 +131,12 @@ gpgconf --kill gpg-agent 2>/dev/null || true
 if ! grep -q '^\[omarchy\]' "$CONF"; then
   printf '\n[omarchy]\nServer = https://pkgs.omarchy.org/stable/$arch\n' >> "$CONF"
 fi
-pacman -Syy --noconfirm
+SYNCED=0   # the new [omarchy] repo needs its own list
+sync_db
+mark_done
+fi
 
 # 5. desktop packages ------------------------------------------------------------------------------------------
-stage 5 "Installing Chrome, i3, fonts and tools"
 # xkeyboard-config     lorie compiles its keymap from <rootfs>/usr/share/X11/xkb (a symlink to xkeyboard-config-2)
 # xorg-fonts-misc      X core fonts ("fixed", "cursor"); linked into usr/share/fonts/X11 below for lorie
 # xdotool xwininfo...  fit-window.sh / deskd input + window geometry
@@ -110,6 +150,9 @@ stage 5 "Installing Chrome, i3, fonts and tools"
 PKGS="xkeyboard-config xorg-fonts-misc xorg-fonts-alias-misc xorg-mkfontscale xdotool xorg-xwininfo xorg-xprop"
 PKGS="$PKGS xorg-xsetroot xorg-xrandr i3-wm i3status rofi dunst feh alacritty btop"
 PKGS="$PKGS noto-fonts noto-fonts-emoji ttf-dejavu ttf-liberation ttf-jetbrains-mono-nerd-basic fontconfig python pulseaudio libpulse"
+stage 5 "Installing Chrome, i3, fonts and tools"
+if ! stage_done; then
+sync_db
 pacman -S --needed --noconfirm $PKGS || { pacman -Syy --noconfirm; pacman -S --needed --noconfirm $PKGS; } || log "pacman reported errors (often harmless hook failures under PRoot); verifying ..."
 
 # Browser: Omarchy's default, Google Chrome 158 (glibc; deps gtk3 nss alsa-lib ..., no systemd). Fallback: ALARM
@@ -123,20 +166,7 @@ fi
 # omarchy-nvim is nice to have (Omarchy's neovim setup); never fatal.
 pacman -S --needed --noconfirm omarchy-nvim >/dev/null 2>&1 || log "note: omarchy-nvim not installed"
 
-# 6. Omarchy themes, without the meta package's deps --------------------------------------------------------------
-stage 6 "Installing the Omarchy themes"
-# -Sw downloads omarchy-*.pkg.tar.zst (82 MB, signature-checked by pacman) without installing its dependency tree;
-# bsdtar then extracts only usr/share/omarchy/themes.
-if [ ! -f /usr/share/omarchy/themes/tokyo-night/colors.toml ]; then
-  pacman -Sw --noconfirm --nodeps --nodeps omarchy || log "note: could not download the omarchy package (themes)"
-  PKG=$(ls -t /var/cache/pacman/pkg/omarchy-[0-9]*.pkg.tar.zst 2>/dev/null | head -1 || true)
-  if [ -n "$PKG" ]; then
-    bsdtar -xf "$PKG" -C / 'usr/share/omarchy/themes/*' && log "Omarchy themes installed from $(basename "$PKG")"
-    rm -f "$PKG"
-  fi
-fi
-
-# 7. checks ------------------------------------------------------------------------------------------------------
+# Checks: stage 5 counts as done only with a browser, the X keymaps and i3 in place.
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
 [ -n "$BIN" ] || { log "no browser binary after install (google-chrome-stable / chromium)"; exit 3; }
@@ -151,9 +181,33 @@ for d in misc TTF OTF 75dpi 100dpi Type1; do
 done
 [ -f /usr/share/fonts/misc/fonts.dir ] || mkfontdir /usr/share/fonts/misc 2>/dev/null || true
 fc-cache -f >/dev/null 2>&1 || true
+mark_done
+fi
 
-# 8. the Omarchy look for i3 / alacritty / Chrome (rendered from the theme's colors.toml) -------------------------
+# 6. Omarchy themes, without the meta package's deps --------------------------------------------------------------
+stage 6 "Installing the Omarchy themes"
+if ! stage_done; then
+# -Sw downloads omarchy-*.pkg.tar.zst (82 MB, signature-checked by pacman) without installing its dependency tree;
+# bsdtar then extracts only usr/share/omarchy/themes.
+if [ ! -f /usr/share/omarchy/themes/tokyo-night/colors.toml ]; then
+  sync_db
+  pacman -Sw --noconfirm --nodeps --nodeps omarchy || log "note: could not download the omarchy package (themes)"
+  PKG=$(ls -t /var/cache/pacman/pkg/omarchy-[0-9]*.pkg.tar.zst 2>/dev/null | head -1 || true)
+  if [ -n "$PKG" ]; then
+    bsdtar -xf "$PKG" -C / 'usr/share/omarchy/themes/*' && log "Omarchy themes installed from $(basename "$PKG")"
+    rm -f "$PKG"
+  fi
+fi
+# Themes are never fatal, but a stage without them is not "done": a later run tries the download again.
+if [ -f /usr/share/omarchy/themes/tokyo-night/colors.toml ]; then mark_done; else log "note: Omarchy themes missing; i3 uses its defaults"; fi
+fi
+
+# 7. the Omarchy look for i3 / alacritty / Chrome (rendered from the theme's colors.toml) -------------------------
+# Never skipped: it is quick, and it writes the final marker the app checks.
 stage 7 "Applying the Omarchy look"
+BIN=""
+for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
+[ -n "$BIN" ] || { log "no browser binary (google-chrome-stable / chromium)"; exit 3; }
 python3 /opt/linuxdesk/omarchy/omarchy-theme.py "${LINUXDESK_OMARCHY_THEME:-tokyo-night}" || log "note: theme render failed; i3 uses its defaults"
 
 # Keep the image lean.
@@ -163,4 +217,5 @@ mkdir -p /etc/linuxdesk
 command -v pulseaudio >/dev/null 2>&1 && echo "pulseaudio libpulse" > /etc/linuxdesk/audio-v1 \
   || log "note: pulseaudio missing; the session stays silent"
 echo "$PKGS $BIN" > /etc/linuxdesk/omarchy-v1
+mark_done
 log "done: $($BIN --version 2>/dev/null || echo "$BIN"), $(i3 --version 2>/dev/null | head -1)"

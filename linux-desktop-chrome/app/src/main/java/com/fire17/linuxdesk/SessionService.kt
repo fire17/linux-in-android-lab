@@ -16,6 +16,7 @@ import android.os.PowerManager
 import android.util.Log
 import com.fire17.linuxdesk.SessionBus.State
 import com.fire17.linuxdesk.audio.AudioOut
+import com.fire17.linuxdesk.audio.MicForeground
 import com.fire17.linuxdesk.audio.MicGuest
 import com.fire17.linuxdesk.audio.PulseHost
 import com.fire17.linuxdesk.audio.MicIn
@@ -110,6 +111,7 @@ class SessionService : Service() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.ld_channel_name), NotificationManager.IMPORTANCE_LOW)
         )
+        MicForeground.listener = { fg -> onAppForeground(fg) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -178,6 +180,8 @@ class SessionService : Service() {
             // config.js (port + token, or port 0 = off) before Chromium starts.
             if (PhoneCamera.consent) PhoneCamera.start(this)
             PhoneCamera.writeConfig(installer.rootfsDir)
+            // Cameras v4: every session start puts the camera inventory into the session log (→ sys.logs, Share logs).
+            com.fire17.linuxdesk.camera.CameraLog.logInventory(this, "session-start")
             if (PhoneCamera.running) {
                 SessionBus.log("camera: phone camera available to Linux")
                 try { goForeground() } catch (t: Throwable) { SessionBus.log("camera: foreground type not granted (${t.javaClass.simpleName})") }
@@ -367,6 +371,7 @@ class SessionService : Service() {
     }
 
     override fun onDestroy() {
+        MicForeground.listener = null
         endMic()
         endCamera()
         if (!stopping) {
@@ -386,6 +391,24 @@ class SessionService : Service() {
     // ------------------------------------------------------------------------------------------ microphone
 
     @Volatile private var micPort = 0
+
+    /** Foreground-only mic (Tami 21:39): capture only while a LinuxDesk screen is on, unless background is allowed. */
+    private fun micAllowedNow() =
+        MicForeground.mayCapture(MicIn.consent, MicForeground.visible, settings.micInBackground)
+
+    /** MicForeground's edge (main thread). Background: release AudioRecord now, keep consent and the guest source
+     *  (it then feeds Linux silence). Foreground: resume if the switch is still ON. */
+    private fun onAppForeground(fg: Boolean) {
+        if (stopping) return
+        if (fg) {
+            if (MicIn.consent && !MicIn.active) Thread({ micOn() }, "LinuxDeskMicResume").start()
+        } else if (MicIn.active && !settings.micInBackground) {
+            MicIn.stop()   // synchronous: other apps (WhatsApp voice notes) can record from here on
+            SessionBus.log("mic: paused, LinuxDesk is in the background (resumes when you come back)")
+            try { goForeground(withMic = false) } catch (_: Throwable) {}
+            updateNotification()
+        }
+    }
 
     // ------------------------------------------------------------------------------------------ phone camera
 
@@ -428,6 +451,7 @@ class SessionService : Service() {
     /** Loads the guest source (once per session port), then starts capture. Runs off the main thread. */
     @Synchronized private fun micOn() {
         if (!MicIn.consent || stopping || MicIn.active) return
+        if (!micAllowedNow()) { SessionBus.log("mic: waits until LinuxDesk is on screen (foreground-only)"); return }
         val live = SessionBus.snapshot.state in setOf(State.STARTING_BROWSER, State.RUNNING, State.BROWSER_EXITED)
         if (!live) { SessionBus.log("mic: will start when the session is running"); return }
         if (!PulseHost.running) {
@@ -458,8 +482,14 @@ class SessionService : Service() {
                 micPort = port
             }
             if (!MicIn.consent) { micOff(); return }   // switched OFF while the source was being added
+            // Left the screen while the source was being added: the background edge saw no capture to stop.
+            if (!micAllowedNow()) {
+                SessionBus.log("mic: waits until LinuxDesk is on screen (foreground-only)")
+                goForeground(withMic = false); updateNotification(); return
+            }
             MicIn.onState = { SessionBus.log(it) }
             if (!MicIn.start(this, micPort)) SessionBus.log("mic: not started (permission missing?)")
+            if (!micAllowedNow()) MicIn.stop()   // the background edge landed between the check and start()
         } catch (t: Throwable) {
             SessionBus.log("mic: start failed (${t.javaClass.simpleName})")
             MicIn.stop()

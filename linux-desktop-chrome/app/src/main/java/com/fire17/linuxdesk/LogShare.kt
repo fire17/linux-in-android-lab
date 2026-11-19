@@ -55,6 +55,10 @@ object LogShare {
             putFile("genie-audit.jsonl.1", File(activity.filesDir, "genie-audit.jsonl.1"))
             putFile("selftest.log", File(activity.filesDir, "rootfs/run/linuxdesk/selftest.log"))
             put("device.txt", deviceInfo(activity))
+            // Cameras v4: the generic camera inventory + default (read-only, no CAMERA permission).
+            put("cameras.json", try {
+                com.fire17.linuxdesk.camera.CameraDiag.json(com.fire17.linuxdesk.camera.CameraDiag.read(activity)).toString(2)
+            } catch (t: Throwable) { "{\"error\":\"${t.javaClass.simpleName}\"}" })
             put("hw.json", try { com.fire17.linuxdesk.hw.HwProbe.get(activity).toString(2) } catch (t: Throwable) {
                 "{\"error\":\"${t.javaClass.simpleName}\"}"
             })

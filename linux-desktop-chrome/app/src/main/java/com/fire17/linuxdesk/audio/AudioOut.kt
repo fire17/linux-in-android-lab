@@ -2,7 +2,9 @@ package com.fire17.linuxdesk.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import com.fire17.linuxdesk.LinuxDeskSettings
 import com.fire17.linuxdesk.SessionBus
@@ -40,12 +42,18 @@ object AudioOut {
     @Volatile private var worker: Thread? = null
     @Volatile private var socket: Socket? = null
     @Volatile private var active = false
+    /** Mic on → play as voice-communication, so the platform echo canceller (MicIn) gets the speaker as its
+     *  reference and the mic is not echoed back to Linux. Mic off → plain media playback. */
+    @Volatile private var voiceMode = false
+    /** Kept from [prepare], only to look up the built-in speaker for [voiceMode] playback. */
+    @Volatile private var appCtx: Context? = null
 
     private fun log(s: String) = SessionBus.log("sound: $s")
 
     /** Before PulseHost.start. Registers the loopback TCP record module when Sound is ON. */
     fun prepare(ctx: Context) {
         stop()
+        appCtx = ctx.applicationContext
         if (!LinuxDeskSettings(ctx).sound) {
             PulseHost.release(OWNER)
             port = 0
@@ -76,12 +84,19 @@ object AudioOut {
         worker = null
     }
 
-    private fun newTrack(): AudioTrack {
+    /** MicIn calls this when the mic toggles. The running track is rebuilt with the new usage on the same stream. */
+    fun setVoiceMode(on: Boolean) {
+        if (voiceMode == on) return
+        voiceMode = on
+        if (active) log(if (on) "voice mode (mic on: echo cancel reference)" else "media mode (mic off)")
+    }
+
+    private fun newTrack(voice: Boolean): AudioTrack {
         val min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
         return AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setUsage(if (voice) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA)
+                .setContentType(if (voice) AudioAttributes.CONTENT_TYPE_SPEECH else AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build())
             .setAudioFormat(AudioFormat.Builder()
                 .setSampleRate(RATE)
@@ -92,6 +107,21 @@ object AudioOut {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
+            .also { if (voice) speakerFor(it) }
+    }
+
+    /**
+     * Voice-communication playback goes to the earpiece on many phones, which would make Linux sound nearly silent
+     * while the mic is on. With no headset, Bluetooth or USB audio connected, pin the track to the built-in speaker.
+     */
+    private fun speakerFor(track: AudioTrack) {
+        val am = appCtx?.getSystemService(AudioManager::class.java) ?: return
+        val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        val headset = setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_USB_DEVICE)
+        if (outs.any { it.type in headset }) return
+        outs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }?.let { track.setPreferredDevice(it) }
     }
 
     private fun loop(p: Int) {
@@ -104,10 +134,15 @@ object AudioOut {
                 s.tcpNoDelay = true
                 s.connect(InetSocketAddress("127.0.0.1", p), 2_000)
                 s.soTimeout = 5_000
-                track = newTrack().also { it.play() }
                 if (failures > 0) log("connected after $failures retries")
                 failures = 0
-                pump(s.getInputStream(), track)
+                while (active) {
+                    val voice = voiceMode
+                    track = newTrack(voice).also { it.play() }
+                    pump(s.getInputStream(), track, voice)   // returns only when the mic flips voiceMode
+                    try { track.pause(); track.flush(); track.release() } catch (_: Exception) {}
+                    track = null
+                }
             } catch (e: Exception) {
                 if (active && (failures == 0 || failures % 30 == 0)) log("stream not available (${e.javaClass.simpleName}); retrying")
                 failures++
@@ -120,10 +155,11 @@ object AudioOut {
         }
     }
 
-    private fun pump(input: InputStream, track: AudioTrack) {
+    private fun pump(input: InputStream, track: AudioTrack, voice: Boolean) {
         val buf = ByteArray(CHUNK * 2)
         var carry = 0                       // keep writes frame-aligned
         while (active) {
+            if (carry == 0 && voiceMode != voice) return   // frame boundary: the caller rebuilds the track
             val backlog = input.available()
             if (carry == 0 && backlog > MAX_BACKLOG) {     // only on a frame boundary, so channels never swap
                 val drop = (backlog - CHUNK * 4) / FRAME_BYTES * FRAME_BYTES

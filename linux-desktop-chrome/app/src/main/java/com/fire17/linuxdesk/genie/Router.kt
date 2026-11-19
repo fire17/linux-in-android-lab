@@ -76,6 +76,12 @@ interface RouterEnv {
     fun otaStatus(tail: Int): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
     /** sys.ota.check: checks the update URL (signature, anti-downgrade); NEVER downloads the bundle or installs. */
     fun otaCheck(): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
+    /**
+     * sys.cameras (cameras v4): the phone's camera inventory as CameraDiag JSON — ids, facing, focal, logical/physical
+     * lenses, max sizes, which ones "Phone camera for Linux" exposes and the default. READ-ONLY: never opens a camera,
+     * needs no CAMERA permission, and does not depend on the in-app switch. Default = not wired.
+     */
+    fun camerasInfo(): JSONObject = JSONObject().put("ok", false).put("error", "unsupported")
     fun version(): String
     fun now(): Long = System.currentTimeMillis()
     fun onAppClosed() {}
@@ -418,6 +424,11 @@ class Router(
                 done(try { Reply.Json(env.otaCheck()) } catch (t: Throwable) { err("internal", t.javaClass.simpleName) })
             }
             verb.startsWith("sys.ota.") -> done(err("denied", "OTA installs only from the LinuxDesk app"))
+            // Read-only camera INVENTORY (no openCamera, no permission). Matched by exact name BEFORE the camera.* /
+            // cam.* deny below, and "sys.cameras" does not start with either prefix, so capture stays denied.
+            verb == "sys.cameras" -> pool.execute {
+                done(try { Reply.Json(env.camerasInfo()) } catch (t: Throwable) { err("internal", t.javaClass.simpleName) })
+            }
             family == "fs" -> {
                 gate(verb, family)?.let { done(it); return }
                 val paths = cmd.optJSONArray("paths")

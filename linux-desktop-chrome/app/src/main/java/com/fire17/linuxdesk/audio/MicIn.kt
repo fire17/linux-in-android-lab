@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import java.io.IOException
 import java.io.OutputStream
@@ -44,6 +46,8 @@ object MicIn {
     @Volatile private var thread: Thread? = null
     @Volatile private var record: AudioRecord? = null
     @Volatile private var socket: Socket? = null
+    @Volatile private var aec: AcousticEchoCanceler? = null
+    @Volatile private var ns: NoiseSuppressor? = null
     private val lock = Any()
 
     /** Optional state sink (SessionBus.log). Never receives audio, only words like "connected". */
@@ -68,6 +72,7 @@ object MicIn {
         record = rec
         running = true
         thread = Thread({ pump(rec, port) }, "LinuxDeskMicIn").apply { isDaemon = true; start() }
+        AudioOut.setVoiceMode(true)   // speaker becomes the echo canceller's reference
         true
     }
 
@@ -80,6 +85,7 @@ object MicIn {
             t = thread; thread = null
             try { socket?.close() } catch (_: Exception) {}
             socket = null
+            releaseEffects()
             record?.let { r ->
                 try { r.stop() } catch (_: Exception) {}
                 try { r.release() } catch (_: Exception) {}
@@ -87,6 +93,7 @@ object MicIn {
             record = null
         }
         t?.interrupt()
+        AudioOut.setVoiceMode(false)
         state("mic: off")
     }
 
@@ -101,10 +108,30 @@ object MicIn {
             val r = try {
                 AudioRecord(src, RATE, chMask, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, CHUNK_BYTES * 4))
             } catch (_: Exception) { null } ?: continue
-            if (r.state == AudioRecord.STATE_INITIALIZED) return r
+            if (r.state == AudioRecord.STATE_INITIALIZED) { attachEffects(r); return r }
             r.release()
         }
         return null
+    }
+
+    /** Speaker → mic echo (Linux sound out of the phone speaker feeding back into the mic): ask the platform for
+     *  its echo canceller + noise suppressor on this capture session. AudioOut plays as voice-communication while
+     *  the mic is on, so the canceller gets the speaker as its reference. */
+    private fun attachEffects(r: AudioRecord) {
+        val id = r.audioSessionId
+        aec = try {
+            if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(id)?.apply { enabled = true } else null
+        } catch (_: Exception) { null }
+        ns = try {
+            if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(id)?.apply { enabled = true } else null
+        } catch (_: Exception) { null }
+        state(if (aec?.enabled == true) "mic: echo cancel on" else "mic: echo cancel unavailable")
+    }
+
+    private fun releaseEffects() {
+        try { aec?.release() } catch (_: Exception) {}
+        try { ns?.release() } catch (_: Exception) {}
+        aec = null; ns = null
     }
 
     private fun pump(rec: AudioRecord, port: Int) {

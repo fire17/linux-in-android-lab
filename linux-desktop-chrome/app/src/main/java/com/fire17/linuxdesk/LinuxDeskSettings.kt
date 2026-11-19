@@ -54,6 +54,15 @@ class LinuxDeskSettings(context: Context) {
         set(v) = p.edit().putBoolean("mic_always_on", v).apply()
 
     /**
+     * "Allow microphone in background". OFF by default = foreground-only (Tami, voice 2026-11-19 21:39): the phone
+     * mic feeds Linux only while a LinuxDesk screen is on, and is released at once when the app leaves the screen,
+     * so WhatsApp and other apps can record. ON = the old behaviour (capture continues from the foreground service).
+     */
+    var micInBackground: Boolean
+        get() = p.getBoolean("mic_in_background", false)
+        set(v) = p.edit().putBoolean("mic_in_background", v).apply()
+
+    /**
      * Phone camera "relay-only" privacy mode (cameras v3). OFF by default (a recommendation; Tami decides): pages
      * get frames straight from 127.0.0.1 and can see the port and token. ON: pages never see port/token; every frame
      * goes through the extension's service worker (slower: one base64 hop per frame). Live, no restart.

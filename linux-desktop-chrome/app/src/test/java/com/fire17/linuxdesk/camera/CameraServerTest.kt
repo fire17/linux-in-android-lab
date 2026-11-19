@@ -77,6 +77,21 @@ class CameraServerTest {
         assertTrue("\"relayOnly\":false" in PhoneCamera.stateJson(false, 4321, "s", "[]", relay = true))   // off = off
     }
 
+    @Test fun serverOrderIsTheGenericOneWithDefaultFirst() {
+        // back=1, front=0 (CameraCharacteristics). Logical back 0 with lenses 3 (2.2) and 4 (9.0); front 1; back 5.
+        val found = listOf(
+            CameraServer.Cam("1", 0, 3.0f, null, 1280 to 720),
+            CameraServer.Cam("5", 1, 6.3f, null, 1280 to 720),
+            CameraServer.Cam("0", 1, 6.3f, null, 1280 to 720),
+            CameraServer.Cam("3", 1, 2.2f, "0", 1280 to 720),
+            CameraServer.Cam("4", 1, 9.0f, "0", 1280 to 720),
+        )
+        val ids = CameraServer.orderCams(found).map { it.id }
+        assertEquals("0", ids.first())                    // back logical = default, first
+        assertEquals("1", ids.last())                     // front last
+        assertEquals(found.size, ids.size); assertEquals(ids.toSet().size, ids.size)
+    }
+
     @Test fun camJsonIsValidShape() {
         val c = CameraServer.Cam("3", 1, 2.2f, "0", 1280 to 720)
         assertEquals("{\"id\":\"3\",\"label\":\"Phone back 2.2 mm (lens 3 of 0)\",\"facing\":\"back\",\"focalMm\":2.2," +

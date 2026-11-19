@@ -344,6 +344,9 @@ object GenieRuntime {
         override fun fs(cmd: JSONObject): Reply = FsVerbs.handle(ctx, cmd)
         override fun fsInfo(): JSONObject = com.fire17.linuxdesk.storage.StoragePrefs.capsInfo(ctx)
         override fun hwInfo(): JSONObject = com.fire17.linuxdesk.hw.HwProbe.cachedOrWarm(ctx)   // never blocks the Router
+        // Cameras v4 sys.cameras: read-only inventory + generic default (no openCamera, no CAMERA permission).
+        override fun camerasInfo(): JSONObject = com.fire17.linuxdesk.camera.CameraDiag
+            .json(com.fire17.linuxdesk.camera.CameraDiag.read(ctx)).put("ok", true)
         // Read straight from prefs (pair owns GenieSettings and adds the getter + switch); default OFF.
         override fun wideWindowGate(): Boolean =
             ctx.getSharedPreferences("ld.genie", Context.MODE_PRIVATE).getBoolean("wide_window_gate", false)
@@ -377,6 +380,9 @@ object GenieRuntime {
 
         override fun onConnected(genie: String, paired: Boolean) {
             lastNoteAt = System.currentTimeMillis()
+            // Cameras v4: the first genie hello of this process logs the camera inventory (read-only).
+            if (com.fire17.linuxdesk.camera.CameraLog.firstHelloOnce())
+                com.fire17.linuxdesk.camera.CameraLog.logInventory(ctx, "first-genie-hello")
             try { GenieNotes.connected(ctx, genie.ifBlank { "Your genie" }, 0L, stopPendingIntent(ctx)) } catch (_: Throwable) {}
         }
 
