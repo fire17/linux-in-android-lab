@@ -15,6 +15,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Microphone to Linux (audio/MicIn.kt). Requested at runtime ONLY when the person turns the in-app switch
+         ON; default OFF. The genie link cannot turn it on. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Genie link, fs.* verbs (storage lane). Requested only when the person opens Storage; sideloaded APK only
          (spec 02 #11). -->
     <uses-permission
@@ -71,7 +75,7 @@
         <service
             android:name=".SessionService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|microphone">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a user-started Linux desktop session (X server + Chromium) alive while the user works in it." />

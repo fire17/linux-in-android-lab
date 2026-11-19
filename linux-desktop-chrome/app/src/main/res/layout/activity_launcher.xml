@@ -157,6 +157,27 @@
             android:layout_height="wrap_content"
             android:text="@string/ld_opt_gpu" />
 
+        <!-- Sound out (audio/AudioOut.kt): guest audio plays on the phone speaker. Default ON. -->
+        <CheckBox
+            android:id="@+id/opt_sound"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_opt_sound" />
+
+        <!-- Microphone to Linux (audio/MicIn.kt). Default OFF, never persisted, resets when the session ends. -->
+        <Switch
+            android:id="@+id/opt_mic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/ld_mic_switch" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_mic_help"
+            android:textSize="12sp" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

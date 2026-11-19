@@ -15,6 +15,10 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import com.fire17.linuxdesk.SessionBus.State
+import com.fire17.linuxdesk.audio.AudioOut
+import com.fire17.linuxdesk.audio.MicGuest
+import com.fire17.linuxdesk.audio.PulseHost
+import com.fire17.linuxdesk.audio.MicIn
 import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.bridge.FocusBridge
 import com.fire17.linuxdesk.genie.GenieRuntime
@@ -44,6 +48,11 @@ class SessionService : Service() {
         const val ACTION_START = "com.fire17.linuxdesk.action.START"
         const val ACTION_RESTART_BROWSER = "com.fire17.linuxdesk.action.RESTART_BROWSER"
         const val ACTION_STOP = "com.fire17.linuxdesk.action.STOP"
+        /** Re-read MicIn.consent and start/stop capture to match. Carries no on/off value: ON exists only as
+         *  MicIn.consent, which only the in-app switch (same process) can set. Not exported. */
+        const val ACTION_MIC_APPLY = "com.fire17.linuxdesk.action.MIC_APPLY"
+        /** Notification "Stop" for the microphone: always turns it OFF. */
+        const val ACTION_MIC_OFF = "com.fire17.linuxdesk.action.MIC_OFF"
         private const val CHANNEL = "linuxdesk_session"
         private const val NOTIFICATION_ID = 1917
         private const val TAG = "LinuxDesk"
@@ -105,6 +114,8 @@ class SessionService : Service() {
             }
             ACTION_RESTART_BROWSER -> Thread({ restartBrowser() }, "LinuxDeskRestart").start()
             ACTION_STOP -> stopSession()
+            ACTION_MIC_OFF -> { MicIn.setConsent(false); micOff(); SessionBus.notifyMicChanged() }
+            ACTION_MIC_APPLY -> if (MicIn.consent) Thread({ micOn() }, "LinuxDeskMicOn").start() else micOff()
             GenieRuntime.ACTION_STOP_GENIE -> {
                 GenieRuntime.stopGenie(this)
                 if (worker?.isAlive == true || SessionBus.snapshot.state !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
@@ -161,6 +172,17 @@ class SessionService : Service() {
             }
             if (stopping) return
 
+            // Audio (spec 02 #1 v2): the ONE guest PulseAudio (audio/PulseHost) starts before the browser, so
+            // Chromium gets PULSE_SERVER in its env. Any failure is logged and the session continues silently.
+            try {
+                AudioOut.prepare(this)             // Sound ON (default): loopback TCP record module, random port
+                MicGuest.prepare()                 // mic switch already ON: PulseAudio must start even if Sound is OFF
+                if (PulseHost.start(proot)) AudioOut.start()
+            } catch (t: Throwable) {
+                SessionBus.log("pulse: audio setup failed (${t.javaClass.simpleName}); continuing without sound")
+            }
+            if (stopping) return
+
             // Genie access ON: GenieRuntime runs setup-genie.sh once, then deskd (fresh per-session key) becomes
             // Chromium's parent with the SAME flags (CDP over a pipe), and returns true. Genie access OFF, or any
             // genie failure: false, and the proven start-browser.sh path below runs exactly as before.
@@ -175,6 +197,7 @@ class SessionService : Service() {
             }
             if (stopping) return
             if (genieOwnsBrowser) updateNotification() else launchBrowser(proot, flags)
+            if (MicIn.consent && !stopping) micOn()   // switch was turned ON before the session came up
         } catch (t: Throwable) {
             Log.e(TAG, "session failed", t)
             SessionBus.setState(State.ERROR, "${t.javaClass.simpleName}: ${t.message}")
@@ -213,7 +236,8 @@ class SessionService : Service() {
         SessionBus.log("chromium " + flags.joinToString(" "))
         SessionBus.browserWindowUp = false
 
-        val p = proot.start(listOf("/opt/linuxdesk/start-browser.sh") + flags, listOf("DISPLAY=:0"), sysvipc = USE_SYSVIPC)
+        // PulseHost.guestEnv() is empty when PulseAudio is not running, so Chromium then starts exactly as before.
+        val p = proot.start(listOf("/opt/linuxdesk/start-browser.sh") + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv(), sysvipc = USE_SYSVIPC)
         browser = p
         Thread({
             try {
@@ -266,9 +290,11 @@ class SessionService : Service() {
     private fun stopSession() {
         stopping = true
         SessionBus.setState(State.STOPPING, getString(R.string.ld_state_stopping))
+        endMic()   // at once, on the caller's thread: the mic is released before anything else is torn down
         Thread {
             try { GenieRuntime.stop() } catch (_: Throwable) {}
             killBrowser()
+            try { AudioOut.stop(); PulseHost.stop() } catch (_: Throwable) {}
             focusBridge?.stop()
             focusBridge = null
             if (xBound) {
@@ -283,10 +309,12 @@ class SessionService : Service() {
     }
 
     override fun onDestroy() {
+        endMic()
         if (!stopping) {
             stopping = true
             try { GenieRuntime.stop() } catch (_: Throwable) {}
             killBrowser()
+            try { AudioOut.stop(); PulseHost.stop() } catch (_: Throwable) {}
             focusBridge?.stop()
             if (xBound) try { unbindService(xConnection) } catch (_: Exception) {}
             releaseWakeLock()
@@ -295,6 +323,70 @@ class SessionService : Service() {
     }
 
     // ------------------------------------------------------------------------------------------
+
+    // ------------------------------------------------------------------------------------------ microphone
+
+    @Volatile private var micPort = 0
+
+    /** Session ending: consent does not outlive the session. */
+    private fun endMic() {
+        MicIn.setConsent(false)   // stops AudioRecord synchronously
+        micPort = 0
+        SessionBus.notifyMicChanged()
+    }
+
+    /** Loads the guest source (once per session port), then starts capture. Runs off the main thread. */
+    @Synchronized private fun micOn() {
+        if (!MicIn.consent || stopping || MicIn.active) return
+        val live = SessionBus.snapshot.state in setOf(State.STARTING_BROWSER, State.RUNNING, State.BROWSER_EXITED)
+        if (!live) { SessionBus.log("mic: will start when the session is running"); return }
+        if (!PulseHost.running) {
+            // PulseAudio starts once per session (PulseHost), before the browser. If neither Sound nor the mic was ON
+            // at Start, there is no sound server in this session; starting one now would not reach Chromium's env.
+            SessionBus.log("mic: no PulseAudio in this session (turn Sound or the mic on, then Restart the session)")
+            return
+        }
+        // Android 14+: capturing from the background needs the FGS to carry the microphone type. Promoting is
+        // allowed here because the person just flipped the switch with the app on screen.
+        goForeground(withMic = true)
+        try {
+            if (micPort == 0) {
+                val port = MicGuest.pickPort()
+                if (!runPactl(MicGuest.loadScript(port))) {
+                    SessionBus.log("mic: could not add the Linux microphone source (is PulseAudio up?)")
+                    goForeground(withMic = false)
+                    return
+                }
+                micPort = port
+            }
+            if (!MicIn.consent) { micOff(); return }   // switched OFF while the source was being added
+            MicIn.onState = { SessionBus.log(it) }
+            if (!MicIn.start(this, micPort)) SessionBus.log("mic: not started (permission missing?)")
+        } catch (t: Throwable) {
+            SessionBus.log("mic: start failed (${t.javaClass.simpleName})")
+            MicIn.stop()
+        }
+        updateNotification()
+    }
+
+    private fun micOff() {
+        MicIn.stop()   // synchronous: AudioRecord is released before this returns
+        val hadPort = micPort != 0
+        micPort = 0
+        if (!stopping && hadPort) Thread({ runPactl(MicGuest.unloadScript()) }, "LinuxDeskMicOff").start()
+        if (!stopping) { goForeground(withMic = false); updateNotification() }
+    }
+
+    /**
+     * Runs a multi-line pactl script (MicGuest; it exports PULSE_SERVER=PulseHost's socket) against the ONE guest
+     * PulseAudio. A script, not PulseHost.pactl(), because unloading must match OUR modules by args and never touch
+     * audio-out's module-simple-protocol-tcp. Output is not logged (it is module ids only, but keep it quiet).
+     */
+    private fun runPactl(script: String): Boolean {
+        if (!PulseHost.running) return false
+        val r = ProotRuntime(this, settings.prootNoSeccomp).runOnce(script, timeoutSec = 15)
+        return r.exitCode == 0
+    }
 
     private fun waitFor(timeoutMs: Long, cond: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
@@ -319,10 +411,22 @@ class SessionService : Service() {
         wakeLock = null
     }
 
-    private fun goForeground() {
+    private fun goForeground(withMic: Boolean = MicIn.active) {
         val n = buildNotification()
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (withMic) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            try {
+                startForeground(NOTIFICATION_ID, n, type)
+            } catch (e: Exception) {
+                // e.g. ForegroundServiceStartNotAllowedException when promoting from the background
+                if (!withMic) throw e
+                SessionBus.log("mic: Android did not allow microphone use from the background; open the app and try again")
+                MicIn.setConsent(false)
+                startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            }
+        } else if (Build.VERSION.SDK_INT >= 30 && withMic) {
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
             startForeground(NOTIFICATION_ID, n)
         }
@@ -347,6 +451,13 @@ class SessionService : Service() {
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, getString(R.string.ld_restart_browser), restart).build())
             .addAction(Notification.Action.Builder(null, getString(R.string.ld_stop), stop).build())
+        // While the phone microphone feeds Linux, the session notification says so, with a one-tap Stop.
+        if (MicIn.active || MicIn.consent) {
+            val micStop = PendingIntent.getService(this, 3,
+                Intent(this, SessionService::class.java).setAction(ACTION_MIC_OFF), flags)
+            b.setContentText(getString(R.string.ld_mic_on_text))
+            b.addAction(Notification.Action.Builder(null, getString(R.string.ld_mic_stop), micStop).build())
+        }
         // Spec 01 §4 rule 2: while a genie can connect, the session notification offers "Stop genie".
         if (GenieSettings.genieAccess(this) || GenieSettings.localLink(this)) {
             b.addAction(Notification.Action.Builder(null, getString(R.string.ld_genie_stop),

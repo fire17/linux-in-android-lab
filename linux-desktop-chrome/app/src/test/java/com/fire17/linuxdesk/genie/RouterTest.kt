@@ -236,6 +236,18 @@ class RouterTest {
         assertEquals("unsupported", cmd(w, "android.su.exec", 3).getString("error"))
     }
 
+    /** Tami: the mic turns on "only if I approve and turn it on" — no link verb may touch it, nothing relayed. */
+    @Test fun micVerbsAreAlwaysDenied() {
+        val w = authed()
+        var id = 1
+        for (v in listOf("mic.start", "mic.on", "mic.status", "microphone.enable", "audio.in.start", "audio.input",
+                "audio.mic", "audio.record", "MIC.START")) {
+            assertEquals(v, "denied", cmd(w, v, id++).getString("error"))
+        }
+        assertTrue(relay.calls.isEmpty())
+        assertFalse(Router.isMicVerb("audio.out"))   // sound out is not the mic
+    }
+
     @Test fun badJsonKeepsConnectionOpen() {
         val w = authed()
         w.sendRaw("{nope".toByteArray())

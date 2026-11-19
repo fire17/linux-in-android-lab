@@ -1,16 +1,19 @@
 #!/bin/sh
 # LinuxDesk "Genie access" guest setup. Runs INSIDE the Alpine guest under PRoot (fake root), only when the
 # Genie-access switch is ON (spec 01 section 2, phase A). Idempotent; on success writes the marker
-# /etc/linuxdesk/genie-v1, which the app checks. It never touches setup-packages.sh or its packages-v1 marker.
+# /etc/linuxdesk/genie-v2 (v2 added pulseaudio; an existing genie-v1 install re-runs this), which the app checks. It never touches setup-packages.sh or its packages-v1 marker.
 #
 #   python3      runs /opt/linuxdesk/deskd/deskd.py (stdlib only)
 #   py3-pillow   in-process JPEG encode for screen.capture source=x11 (the cheapest path under ptrace)
 #   xwd          X screen capture (xwd -root)
 #   imagemagick  fallback encoder (convert xwd:- jpeg:-) if Pillow is unusable
 #   xdotool      input.* (XTEST) and window geometry; xwininfo/xprop for input.windows
+#   pulseaudio   guest sound server (audio/PulseHost.kt): null sink 'ld' -> phone speaker, phone mic -> Linux.
+#                pulseaudio-utils = pactl. PulseHost also installs these itself when Genie access is OFF.
+#                Chromium talks to PulseAudio natively (libpulse), so alsa-plugins-pulse is not needed.
 set -eu
 
-PKGS="python3 py3-pillow xwd imagemagick xdotool xwininfo xprop"
+PKGS="python3 py3-pillow xwd imagemagick xdotool xwininfo xprop pulseaudio pulseaudio-utils"
 
 echo "[genie-setup] Alpine $(cat /etc/alpine-release 2>/dev/null || echo '?') on $(uname -m)"
 attempt=1
@@ -40,5 +43,7 @@ mkdir -p /run/linuxdesk && chmod 700 /run/linuxdesk
 rm -f /etc/linuxdesk/genie-enabled /etc/linuxdesk/genie.key
 
 mkdir -p /etc/linuxdesk
-echo "$PKGS" > /etc/linuxdesk/genie-v1
+command -v pulseaudio >/dev/null 2>&1 && echo "pulseaudio pulseaudio-utils" > /etc/linuxdesk/audio-v1 \
+  || echo "[genie-setup] note: pulseaudio missing; the session stays silent"
+echo "$PKGS" > /etc/linuxdesk/genie-v2
 echo "[genie-setup] done: $(python3 --version 2>&1), deskd at /opt/linuxdesk/deskd/deskd.py"

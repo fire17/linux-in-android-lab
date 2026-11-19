@@ -3,6 +3,11 @@
     <string name="ld_app_name">LinuxDesk</string>
     <string name="ld_tagline">Desktop Chromium for Linux, running inside this app. The phone screen is the Linux display.</string>
     <string name="ld_channel_name">LinuxDesk session</string>
+    <string name="ld_mic_switch">Microphone to Linux</string>
+    <string name="ld_mic_help">Off by default. When on, Linux apps (e.g. Chromium) hear this phone\'s microphone. Only this switch can turn it on; the genie cannot. Turns off when the session ends. Nothing is recorded to disk.</string>
+    <string name="ld_mic_on_text">Microphone on · Linux can hear this phone</string>
+    <string name="ld_mic_stop">Stop microphone</string>
+    <string name="ld_mic_denied">Microphone permission was not granted, so the microphone stays off.</string>
     <string name="ld_notification_text">Linux desktop session is running (X server + Chromium)</string>
 
     <string name="ld_start">Start</string>
@@ -23,6 +28,7 @@
     <string name="ld_opt_legacy">Legacy drawing (try this if the screen stays black)</string>
     <string name="ld_opt_noseccomp">Slow-safe PRoot mode (PROOT_NO_SECCOMP=1)</string>
     <string name="ld_opt_gpu">Allow GPU in Chromium (usually no effect inside PRoot)</string>
+    <string name="ld_opt_sound">Sound: play Linux audio on this phone (applies at next Start)</string>
 
     <string name="ld_phantom_help">One-time setup (Android 12+): Chromium uses many processes, and Android kills apps with more than 32 child processes. Developer options → \"Disable child process restrictions\" turns this off. From a PC you can instead run: adb shell settings put global settings_enable_monitor_phantom_procs false</string>
     <string name="ld_open_dev_options">Open Developer options</string>

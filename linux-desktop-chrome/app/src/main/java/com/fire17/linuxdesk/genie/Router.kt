@@ -189,6 +189,13 @@ class Router(
          */
         val UNGATED = setOf("stream.ack", "stream.stop", "shell.kill", "fs.proposal", "fs.cancel", "fs.adjust", "fs.log")
 
+        /** mic.*, audio.in*, audio.mic*, microphone.* — never served over the link (MicIn consent rule). */
+        fun isMicVerb(verb: String): Boolean {
+            val v = verb.lowercase()
+            return v.startsWith("mic.") || v.startsWith("microphone.") || v.startsWith("audio.in") ||
+                v.startsWith("audio.mic") || v.startsWith("audio.record")
+        }
+
         fun windowGated(verb: String, wide: Boolean): Boolean =
             if (wide) !verb.startsWith("sys.") && verb !in UNGATED else verb in SG_GATED
 
@@ -407,6 +414,9 @@ class Router(
                 relayCall(s, verb, cmd, done)
             }
             verb.startsWith("android.su.") -> done(err("unsupported", "real Android root is not part of v1"))
+            // Microphone to Linux is the person's in-app switch only ("only if I approve and turn it on").
+            // No verb may start, stop, or query capture; refused before any gate, never relayed to deskd.
+            isMicVerb(verb) -> done(err("denied", "the microphone can only be turned on in the LinuxDesk app"))
             else -> done(err("unknown_cmd", verb.take(64)))
         }
     }

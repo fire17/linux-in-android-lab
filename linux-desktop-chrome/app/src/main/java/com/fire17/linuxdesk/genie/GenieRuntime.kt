@@ -26,7 +26,7 @@ import java.util.Base64
  *                                       and Developer: local link OFF and closes every genie connection.
  *
  * What runs (each gated by its own OFF-by-default switch, spec 01 §4 rule 2):
- *  - Genie access ON  → setup-genie.sh (once, marker etc/linuxdesk/genie-v1) → deskd on 127.0.0.1:8765 with a
+ *  - Genie access ON  → setup-genie.sh (once, marker etc/linuxdesk/genie-v2) → deskd on 127.0.0.1:8765 with a
  *    fresh per-session key → DeskdClient relay → IrohLink (ALPN linuxdesk/1).
  *  - Developer: local link ON → WireServer on 127.0.0.1:8766 (same Router).
  * Switch flips and Forget arrive through Binding.addListener and are applied live.
@@ -40,7 +40,7 @@ object GenieRuntime {
     const val ACTION_STOP_GENIE = "com.fire17.linuxdesk.action.STOP_GENIE"
     const val DESKD_PORT = 8765
     const val WIRE_PORT = 8766
-    private const val GENIE_MARKER = "etc/linuxdesk/genie-v1"
+    private const val GENIE_MARKER = "etc/linuxdesk/genie-v2"   // v2: + pulseaudio (sound out / mic in)
     private const val DESKD = "/opt/linuxdesk/deskd/deskd.py"
     private const val BROWSER_CMD = "/opt/linuxdesk/start-browser.sh"
     private const val RESTART_DELAY_MS = 3_000L
@@ -227,6 +227,9 @@ object GenieRuntime {
         val r = relay ?: return
         val key = newKey()
         val env = mutableListOf("DISPLAY=:0", "LINUXDESK_KEY=$key", "LINUXDESK_PORT=$DESKD_PORT")
+        // PULSE_SERVER/PULSE_SINK when the guest PulseAudio runs (empty otherwise); cdp.py's _env passes them on to
+        // the Chromium deskd launches (it strips only LINUXDESK_*).
+        env += com.fire17.linuxdesk.audio.PulseHost.guestEnv()
         if (BuildConfig.DEBUG) env += "LINUXDESK_SELFTEST=1"      // device self-test batch (spec 02), debug builds only
         val flags = browserFlags
         if (withBrowser && flags != null) {

@@ -32,6 +32,8 @@ object SessionBus {
         fun onState(s: Snapshot) {}
         fun onLog(line: String) {}
         fun onKeyboardRequest(show: Boolean) {}
+        /** "Microphone to Linux" turned on/off (switch, notification Stop, or session end). */
+        fun onMicChanged() {}
     }
 
     /** Lines shown in the launcher / shared by LogShare. The ring itself keeps more, for `sys.logs`. */
@@ -78,6 +80,10 @@ object SessionBus {
     fun logText(): String = lines.lastLines(MAX_LINES).joinToString("\n")
 
     fun lastLogLine(): String = lines.lastLines(1).lastOrNull().orEmpty()
+
+    fun notifyMicChanged() {
+        main.post { listeners.forEach { it.onMicChanged() } }
+    }
 
     fun requestKeyboard(show: Boolean) {
         main.post { listeners.forEach { it.onKeyboardRequest(show) } }

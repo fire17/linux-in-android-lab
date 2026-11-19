@@ -22,6 +22,7 @@
     <string name="ld_opt_legacy">ציור במצב ישן (legacy). כדאי לנסות אם המסך נשאר שחור</string>
     <string name="ld_opt_noseccomp">מצב PRoot איטי ובטוח (PROOT_NO_SECCOMP=1)</string>
     <string name="ld_opt_gpu">לאפשר GPU ב-Chromium (בדרך כלל אין לזה השפעה בתוך PRoot)</string>
+    <string name="ld_opt_sound">צליל: להשמיע את האודיו של לינוקס בטלפון (חל מההפעלה הבאה)</string>
 
     <string name="ld_phantom_help">הגדרה חד-פעמית (אנדרואיד 12 ומעלה): ל-Chromium יש הרבה תהליכים, ואנדרואיד הורג אפליקציות שיש להן יותר מ-32 תהליכי בן. כדי לבטל את זה: אפשרויות מפתחים ← \"Disable child process restrictions\". אפשר גם ממחשב: adb shell settings put global settings_enable_monitor_phantom_procs false</string>
     <string name="ld_open_dev_options">פתיחת אפשרויות מפתחים</string>

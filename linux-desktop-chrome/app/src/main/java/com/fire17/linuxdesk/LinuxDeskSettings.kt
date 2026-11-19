@@ -36,6 +36,14 @@ class LinuxDeskSettings(context: Context) {
         get() = p.getBoolean("prootNoSeccomp", false)
         set(v) = p.edit().putBoolean("prootNoSeccomp", v).apply()
 
+    /**
+     * Sound out: guest audio (PulseAudio null sink) plays through the phone speaker. Default ON (Tami asked for
+     * sound). Applied at the next session start. OFF = PulseAudio is not started for sound, Chromium is muted.
+     */
+    var sound: Boolean
+        get() = p.getBoolean("sound", true)
+        set(v) = p.edit().putBoolean("sound", v).apply()
+
     /** Off by default: inside proot there is no GPU device, so Chromium uses software compositing. */
     var useGpu: Boolean
         get() = p.getBoolean("useGpu", false)

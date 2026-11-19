@@ -16,9 +16,11 @@ import android.widget.EditText
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.fire17.linuxdesk.SessionBus.State
+import com.fire17.linuxdesk.audio.MicIn
 import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.genie.PairActivity
 import com.fire17.linuxdesk.storage.ReviewActivity
@@ -38,10 +40,13 @@ class LauncherActivity : Activity(), SessionBus.Listener {
     private lateinit var openBtn: Button
     private lateinit var stopBtn: Button
     private var autoOpened = false
+    private lateinit var micSwitch: Switch
+    private var micSyncing = false
 
     companion object {
         /** Set by DesktopActivity's "Back to launcher": stay on this screen, don't bounce back to the desktop. */
         const val EXTRA_STAY = "com.fire17.linuxdesk.extra.STAY"
+        private const val REQ_MIC = 2
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -104,6 +109,18 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         bindCheck(R.id.opt_legacy, settings.legacyDrawing) { settings.legacyDrawing = it }
         bindCheck(R.id.opt_noseccomp, settings.prootNoSeccomp) { settings.prootNoSeccomp = it }
         bindCheck(R.id.opt_gpu, settings.useGpu) { settings.useGpu = it }
+        bindCheck(R.id.opt_sound, settings.sound) { settings.sound = it }
+
+        // Microphone to Linux: the ONLY place consent can become true. RECORD_AUDIO is asked for only here, only
+        // when the person turns it ON. Deliberately no autostart/intent extra can flip it.
+        micSwitch = findViewById(R.id.opt_mic)
+        micSwitch.isChecked = MicIn.consent
+        micSwitch.setOnCheckedChangeListener { _, on ->
+            if (micSyncing) return@setOnCheckedChangeListener
+            if (!on) { setMic(false); return@setOnCheckedChangeListener }
+            if (MicIn.hasPermission(this)) setMic(true)
+            else { syncMicSwitch(false); requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC) }
+        }
 
         startBtn.setOnClickListener {
             settings.homeUrl = ChromiumFlags.normalizeUrl(url.text.toString())
@@ -145,6 +162,35 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         if (savedInstanceState == null && intent.getBooleanExtra("autostart", false)) startBtn.performClick()
     }
 
+    private fun setMic(on: Boolean) {
+        if (on) MicIn.setConsent(true) else MicIn.setConsent(false)   // false also stops capture right now
+        val s = SessionBus.snapshot.state
+        if (s !in setOf(State.IDLE, State.STOPPED, State.ERROR)) {
+            SessionService.start(this, if (on) SessionService.ACTION_MIC_APPLY else SessionService.ACTION_MIC_OFF)
+        } else if (on) {
+            Toast.makeText(this, "The microphone will turn on when the session starts", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun syncMicSwitch(on: Boolean) {
+        micSyncing = true
+        micSwitch.isChecked = on
+        micSyncing = false
+    }
+
+    override fun onMicChanged() = syncMicSwitch(MicIn.consent)
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_MIC) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            syncMicSwitch(true); setMic(true)
+        } else {
+            syncMicSwitch(false)
+            Toast.makeText(this, R.string.ld_mic_denied, Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun bindCheck(id: Int, value: Boolean, set: (Boolean) -> Unit) {
         val cb = findViewById<CheckBox>(id)
         cb.isChecked = value
@@ -156,6 +202,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         SessionBus.addListener(this)
         logText.text = SessionBus.logText()
         onState(SessionBus.snapshot)
+        syncMicSwitch(MicIn.consent)
     }
 
     override fun onStop() {
