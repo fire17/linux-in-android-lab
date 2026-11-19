@@ -59,22 +59,33 @@ if ! grep -qxF "$(python3 /opt/linuxdesk/omarchy/omarchy-theme.py --stamp 2>/dev
   python3 /opt/linuxdesk/omarchy/omarchy-theme.py "$(cat /etc/linuxdesk/omarchy-theme 2>/dev/null || echo tokyo-night)"
 fi
 
-# The look stage (setup-omarchy.sh stage 9, optional): polybar + picom, in the background like the apps below. Until it
-# is done the desktop runs with i3bar and no compositor (bar.sh and compositor.sh fall back by themselves).
-if [ "$(cat /etc/linuxdesk/omarchy-stage-9 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then
-  echo "[omarchy] installing polybar + picom in the background"
-  ( nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh look 2>&1 | tee -a /etc/linuxdesk/omarchy-look.log \
-      | grep --line-buffered '^\[omarchy\] look:' ) &
+# The look stage (setup-omarchy.sh look, optional): polybar + picom, ~2 MB. Until it is done the desktop runs with
+# i3bar and no compositor (bar.sh and compositor.sh fall back by themselves); when it finishes, i3 reloads.
+LOOK=0
+if [ "$(cat /etc/linuxdesk/look-v1 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then
+  LOOK=1; echo "[omarchy] installing polybar + picom in the background (log: /etc/linuxdesk/omarchy-look.log)"
 fi
-
 # Omarchy's apps (setup-omarchy.sh stage 8, optional): installed in the background while the desktop is already up,
 # for new and for already-installed rootfs (the first-run setup skips stages by their markers and never sees stage 8).
 # Its "apps:" lines go to the session log; pacman's full output to /etc/linuxdesk/omarchy-apps.log. setup-omarchy.sh
 # holds a lock, so a second Start (or "Restart browser") does not start a second install. Never blocks the browser.
+APPS=0
 if [ "$(cat /etc/linuxdesk/omarchy-stage-8 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then
-  echo "[omarchy] installing Omarchy's apps in the background (log: /etc/linuxdesk/omarchy-apps.log)"
-  ( nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh apps 2>&1 | tee -a /etc/linuxdesk/omarchy-apps.log \
-      | grep --line-buffered '^\[omarchy\] apps:' ) &
+  APPS=1; echo "[omarchy] installing Omarchy's apps in the background (log: /etc/linuxdesk/omarchy-apps.log)"
+fi
+# One background job, look first (small), then apps: two pacman runs at once would fight over pacman's lock.
+if [ "$LOOK" = 1 ] || [ "$APPS" = 1 ]; then
+  (
+    if [ "$LOOK" = 1 ]; then
+      nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh look 2>&1 | tee -a /etc/linuxdesk/omarchy-look.log \
+        | grep --line-buffered '^\[omarchy\] look:'
+      [ "$(cat /etc/linuxdesk/look-v1 2>/dev/null)" = 1 ] && i3-msg -q reload 2>/dev/null
+    fi
+    if [ "$APPS" = 1 ]; then
+      nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh apps 2>&1 | tee -a /etc/linuxdesk/omarchy-apps.log \
+        | grep --line-buffered '^\[omarchy\] apps:'
+    fi
+  ) &
 fi
 
 # Drop flags that fight a window manager.

@@ -44,10 +44,25 @@ fi
 chmod +x /opt/linuxdesk/omarchy/*.sh 2>/dev/null || true
 
 # Omarchy's apps (setup-omarchy.sh stage 8): same background install as start-omarchy.sh; never blocks the browser.
+# The sway packages themselves are installed by setup's stage 9, which skips on low memory; this script only runs once
+# sway exists, so a missing sway-v1 marker here means only a newer SWAY_REV (configs) is pending. Both share one
+# background job: two pacman runs at once would fight over pacman's lock.
+SWAYPKG=0
+if [ "$(cat /etc/linuxdesk/sway-v1 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then SWAYPKG=1; fi
+APPS=0
 if [ "$(cat /etc/linuxdesk/omarchy-stage-8 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then
-  echo "[sway] installing Omarchy's apps in the background (log: /etc/linuxdesk/omarchy-apps.log)"
-  ( nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh apps 2>&1 | tee -a /etc/linuxdesk/omarchy-apps.log \
-      | grep --line-buffered '^\[omarchy\] apps:' ) &
+  APPS=1; echo "[sway] installing Omarchy's apps in the background (log: /etc/linuxdesk/omarchy-apps.log)"
+fi
+if [ "$SWAYPKG" = 1 ] || [ "$APPS" = 1 ]; then
+  (
+    if [ "$SWAYPKG" = 1 ]; then
+      nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh sway 2>&1 | grep --line-buffered '^\[omarchy\] sway:'
+    fi
+    if [ "$APPS" = 1 ]; then
+      nice -n 10 sh /opt/linuxdesk/setup-omarchy.sh apps 2>&1 | tee -a /etc/linuxdesk/omarchy-apps.log \
+        | grep --line-buffered '^\[omarchy\] apps:'
+    fi
+  ) &
 fi
 
 # A session bus first: without one B0 saw the tray, power-profiles and systemctl calls fail.

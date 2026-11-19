@@ -268,6 +268,38 @@ sway_main() {
   log "sway: done: $(sway --version 2>/dev/null | head -1)"
   return 0
 }
+# The look (optional): polybar (the top bar; i3bar is its fallback) and picom (rounded corners and fades, xrender
+# backend). `setup-omarchy.sh look`, started in the background by start-omarchy.sh while /etc/linuxdesk/look-v1 (=
+# LOOK_REV) is missing, before the apps stage (one pacman at a time). Both packages are small (~2 MB together). Never
+# fatal: bar.sh and compositor.sh fall back by themselves. Gives up (writes the marker) after APPS_TRIES passes.
+LOOK_REV=1
+LOOK_PKGS="polybar picom"
+look_main() {
+  [ "$(cat "$MARK/look-v1" 2>/dev/null || true)" = "$LOOK_REV" ] && { log "look: already done"; return 0; }
+  mkdir -p "$MARK"
+  if command -v flock >/dev/null 2>&1; then
+    exec 8>"$MARK/omarchy-look.lock"
+    flock -n 8 || { log "look: another run is installing; not starting a second one"; return 0; }
+  fi
+  if [ -e "$PACMAN_LCK" ] && command -v pgrep >/dev/null 2>&1 && ! pgrep -x pacman >/dev/null 2>&1; then log "look: removing a stale pacman lock"; rm -f "$PACMAN_LCK"; fi
+  bad=""
+  for p in $LOOK_PKGS; do
+    pacman -Q "$p" >/dev/null 2>&1 && continue
+    log "look: installing $p"
+    pacman -S --needed --noconfirm "$p" || { pacman -Syy --noconfirm && pacman -S --needed --noconfirm "$p"; } || true
+    pacman -Q "$p" >/dev/null 2>&1 || bad="$bad $p"
+  done
+  tries=$(( $(cat "$MARK/look.tries" 2>/dev/null || echo 0) + 1 ))
+  echo "$tries" > "$MARK/look.tries"
+  if [ -z "$bad" ] || [ "$tries" -ge "$APPS_TRIES" ]; then
+    echo "$LOOK_REV" > "$MARK/look-v1"
+    if [ -z "$bad" ]; then log "look: done (polybar + picom)"; else log "look: giving up on:$bad (i3bar, no compositor)"; fi
+  else
+    log "look: not installed:$bad; next Start retries"
+  fi
+  return 0
+}
+if [ "${1:-}" = look ]; then look_main; exit 0; fi
 if [ "${1:-}" = apps ]; then apps_main; exit 0; fi
 if [ "${1:-}" = sway ]; then sway_main wait || exit 1; exit 0; fi
 
