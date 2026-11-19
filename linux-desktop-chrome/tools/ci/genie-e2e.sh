@@ -151,7 +151,7 @@ IROH_PY=no; IROH_NODE=-; IROH_SK=no; IROH_DNS=-; IROH_PAIR=FAIL; IROH_PING=FAIL
 python3 -c 'import iroh' 2>/dev/null && IROH_PY=yes
 say "iroh: pip iroh importable on runner: $IROH_PY"
 say "iroh: logcat lines so far:"
-grep -aiE 'genie link|iroh|IrohLink|uniffi|jna|UnsatisfiedLink' "$OUT/logcat-all.txt" | tail -40 | tee -a "$LOG"
+grep -aE 'genie|Genie|iroh|Iroh|IrohLink|deskd|uniffi|jna|JNA|UnsatisfiedLink|dlopen|FATAL|ConnectivityManager|SecurityException' "$OUT/logcat-all.txt" | tail -60 | tee -a "$LOG"
 if [ "$IROH_PY" = yes ]; then
   IROH_NODE=$(adb shell run-as $PKG cat shared_prefs/ld.binding.xml 2>/dev/null | python3 -c '
 import base64, re, sys
@@ -241,9 +241,9 @@ adb shell run-as $PKG cat $SELF > "$OUT/selftest.log" 2>&1 || true
 say "selftest.log:"; cat "$OUT/selftest.log" | tee -a "$LOG"
 adb exec-out screencap -p > "$OUT/final.png" 2>/dev/null || true
 kill $LOGCAT_PID $LOGCAT_ALL_PID 2>/dev/null || true
-say "logcat (genie|iroh|deskd|uniffi|jna|UnsatisfiedLink|FATAL), whole run:"
-{ adb logcat -d; cat "$OUT/logcat-all.txt"; } 2>/dev/null \
-  | grep -aE 'genie|Genie|iroh|IrohLink|deskd|uniffi|jna|UnsatisfiedLink|FATAL' | awk '!seen[$0]++' >> "$LOG"
+say "logcat, unfiltered capture grepped (genie|Genie|iroh|Iroh|IrohLink|deskd|uniffi|jna|JNA|UnsatisfiedLink|dlopen|FATAL|ConnectivityManager|SecurityException), whole run:"
+{ adb logcat -d -v time; cat "$OUT/logcat-all.txt"; } 2>/dev/null \
+  | grep -aE 'genie|Genie|iroh|Iroh|IrohLink|deskd|uniffi|jna|JNA|UnsatisfiedLink|dlopen|FATAL|ConnectivityManager|SecurityException' | awk '!seen[$0]++' >> "$LOG"
 grep -E 'genie:|\[deskd\]|selftest' "$LOGCAT" | tail -120 >> "$LOG"
 
 # Scrub: the paired token must not appear in anything we upload (the CLI never prints it; this proves it).
