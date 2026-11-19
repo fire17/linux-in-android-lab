@@ -57,6 +57,9 @@ object SessionBus {
     @Volatile var browserWindowUp = false
 
     /** Last LorieView size in real pixels, which is also the X screen size in "native" resolution mode. */
+    /** First-run rootfs download percent (Omarchy's Arch Linux ARM tarball), -1 when no download is running. */
+    @Volatile var downloadPercent = -1
+
     @Volatile var viewWidth = 0
     @Volatile var viewHeight = 0
 

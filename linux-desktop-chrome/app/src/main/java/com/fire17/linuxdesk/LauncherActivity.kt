@@ -13,6 +13,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -23,6 +24,7 @@ import com.fire17.linuxdesk.SessionBus.State
 import com.fire17.linuxdesk.audio.MicIn
 import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.genie.PairActivity
+import com.fire17.linuxdesk.linux.Distro
 import com.fire17.linuxdesk.storage.ReviewActivity
 
 /**
@@ -39,6 +41,8 @@ class LauncherActivity : Activity(), SessionBus.Listener {
     private lateinit var startBtn: Button
     private lateinit var openBtn: Button
     private lateinit var stopBtn: Button
+    private lateinit var rootfsProgress: ProgressBar
+    private lateinit var distroGroup: RadioGroup
     private var autoOpened = false
     private lateinit var micSwitch: Switch
     private var micSyncing = false
@@ -67,6 +71,15 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         startBtn = findViewById(R.id.btn_start)
         openBtn = findViewById(R.id.btn_open)
         stopBtn = findViewById(R.id.btn_stop)
+
+        rootfsProgress = findViewById(R.id.rootfs_progress)
+        distroGroup = findViewById(R.id.distro)
+        // Alpine is the default and the only choice on x86_64 (Arch Linux ARM is aarch64 only).
+        findViewById<View>(R.id.distro_omarchy).isEnabled = Distro.omarchySupported()
+        distroGroup.check(if (Distro.current(this) == Distro.OMARCHY) R.id.distro_omarchy else R.id.distro_alpine)
+        distroGroup.setOnCheckedChangeListener { _, id ->
+            Distro.set(this, if (id == R.id.distro_omarchy) Distro.OMARCHY else Distro.ALPINE)
+        }
 
         val url = findViewById<EditText>(R.id.url)
         url.setText(settings.homeUrl)
@@ -211,6 +224,15 @@ class LauncherActivity : Activity(), SessionBus.Listener {
     }
 
     override fun onState(s: SessionBus.Snapshot) {
+        // The distro is fixed while a session runs (each has its own rootfs; switch after Stop).
+        val idle = s.state in setOf(State.IDLE, State.STOPPED, State.ERROR)
+        for (i in 0 until distroGroup.childCount) {
+            val c = distroGroup.getChildAt(i)
+            c.isEnabled = idle && (c.id != R.id.distro_omarchy || Distro.omarchySupported())
+        }
+        val pct = SessionBus.downloadPercent
+        rootfsProgress.visibility = if (s.state == State.INSTALLING_ROOTFS && pct in 0..100) View.VISIBLE else View.GONE
+        if (pct in 0..100) rootfsProgress.progress = pct
         stateText.text = getString(R.string.ld_state_fmt, s.state.name, s.message)
         val active = s.state !in setOf(State.IDLE, State.STOPPED, State.ERROR)
         startBtn.isEnabled = !active

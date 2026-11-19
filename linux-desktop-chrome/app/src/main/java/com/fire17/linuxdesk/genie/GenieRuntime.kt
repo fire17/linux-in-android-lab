@@ -206,10 +206,12 @@ object GenieRuntime {
 
     private fun ensureGeniePackages(a: Context, p: ProotRuntime): Boolean {
         if (File(p.rootfsDir, GENIE_MARKER).isFile) return true
-        log("installing guest packages for the genie (setup-genie.sh)")
-        val r = p.runOnce("/opt/linuxdesk/setup-genie.sh", timeoutSec = 1800) { SessionBus.log(it) }
+        // Per distro: setup-genie.sh (Alpine, apk) or setup-genie-arch.sh (Omarchy, pacman); same marker.
+        val script = p.distro.genieScript
+        log("installing guest packages for the genie (${script.substringAfterLast('/')})")
+        val r = p.runOnce(script, timeoutSec = 1800) { SessionBus.log(it) }
         val ok = r.exitCode == 0 && File(p.rootfsDir, GENIE_MARKER).isFile
-        if (!ok) log("setup-genie.sh failed (exit=${r.exitCode})")
+        if (!ok) log("${script.substringAfterLast('/')} failed (exit=${r.exitCode})")
         return ok
     }
 
@@ -233,7 +235,8 @@ object GenieRuntime {
         if (BuildConfig.DEBUG) env += "LINUXDESK_SELFTEST=1"      // device self-test batch (spec 02), debug builds only
         val flags = browserFlags
         if (withBrowser && flags != null) {
-            env += "LINUXDESK_BROWSER_CMD=$BROWSER_CMD"
+            // start-browser.sh (Alpine) or start-omarchy.sh (Omarchy: i3 + Chrome); same argv contract.
+            env += "LINUXDESK_BROWSER_CMD=${p.distro.startScript}"
             env += "LINUXDESK_BROWSER_FLAGS=" + JSONArray(flags).toString()
         }
         val proc = try {
@@ -328,7 +331,7 @@ object GenieRuntime {
         override fun version(): String = BuildConfig.VERSION_NAME
 
         override fun sessionInfo(): JSONObject {
-            val root = File(ctx.filesDir, "rootfs")
+            val root = com.fire17.linuxdesk.linux.Distro.currentRootfs(ctx)   // "rootfs" for Alpine, as before
             return JSONObject()
                 .put("state", SessionBus.snapshot.state.name)
                 .put("rootfs", File(root, "etc").isDirectory)

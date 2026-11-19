@@ -132,7 +132,8 @@ object Binding {
      */
     fun syncHashFile(ctx: Context): Boolean {
         val hash = synchronized(lock) { core(ctx).tokenHash() }
-        return GenieHashFile.write(File(ctx.filesDir, "rootfs"), hash)
+        // The selected distro's rootfs ("rootfs" for Alpine, unchanged; "rootfs-arch" for Omarchy).
+        return GenieHashFile.write(com.fire17.linuxdesk.linux.Distro.currentRootfs(ctx), hash)
     }
 }
 

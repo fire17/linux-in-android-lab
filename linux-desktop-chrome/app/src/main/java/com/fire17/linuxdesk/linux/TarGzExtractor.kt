@@ -25,7 +25,15 @@ import java.util.zip.GZIPInputStream
  * Permissions: mode & 0777, plus owner rw(x) so the app can always update/delete its own tree.
  * setuid/setgid bits are dropped (meaningless under proot's fake root).
  */
-class TarGzExtractor(private val dest: File) {
+class TarGzExtractor(
+    private val dest: File,
+    /**
+     * Guest paths (no leading "/", e.g. "boot/") whose entries are skipped without writing anything. Default:
+     * none, which is the unchanged Alpine behaviour. The Arch Linux ARM tarball uses it to drop the kernel,
+     * firmware and modules (about 1.4 GB of 2.1 GB unpacked), which proot never uses.
+     */
+    private val skipPrefixes: List<String> = emptyList(),
+) {
 
     data class Stats(var files: Int = 0, var dirs: Int = 0, var symlinks: Int = 0, var hardlinks: Int = 0, var skipped: Int = 0, var bytes: Long = 0)
 
@@ -68,8 +76,8 @@ class TarGzExtractor(private val dest: File) {
             // A real entry consumes any pending long-name / PAX overrides.
             paxPath = null; paxLink = null; paxSize = null; gnuLongName = null; gnuLongLink = null
 
-            val out = safeResolve(name)
-            if (out == null) { // empty name, "./", or path traversal attempt
+            val out = if (skipPrefixes.isNotEmpty() && isSkipped(name)) null else safeResolve(name)
+            if (out == null) { // empty name, "./", path traversal attempt, or a skipPrefixes match
                 skipData(tin, size); stats.skipped++; continue
             }
 
@@ -120,6 +128,13 @@ class TarGzExtractor(private val dest: File) {
     }
 
     // ---------------------------------------------------------------------------------------
+
+    private fun isSkipped(rawName: String): Boolean {
+        var n = rawName.replace('\\', '/')
+        while (n.startsWith("./")) n = n.substring(2)
+        n = n.trimStart('/')
+        return skipPrefixes.any { n.startsWith(it) || n == it.trimEnd('/') }
+    }
 
     private fun safeResolve(rawName: String): File? {
         var n = rawName.replace('\\', '/')

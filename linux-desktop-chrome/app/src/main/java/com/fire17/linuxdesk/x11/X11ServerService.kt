@@ -26,6 +26,8 @@ class X11ServerService : Service() {
     companion object {
         const val EXTRA_DPI = "dpi"
         const val EXTRA_LEGACY_DRAWING = "legacyDrawing"
+        /** Directory name under filesDir of the session's rootfs (Distro.dirName). Missing = "rootfs" (Alpine). */
+        const val EXTRA_ROOTFS = "rootfsDir"
         private const val TAG = "LinuxDeskX11"
     }
 
@@ -45,7 +47,8 @@ class X11ServerService : Service() {
     }
 
     private fun startServer(intent: Intent) {
-        val rootfs = File(filesDir, "rootfs")
+        val dirName = intent.getStringExtra(EXTRA_ROOTFS)?.takeIf { it.matches(Regex("[A-Za-z0-9._-]+")) } ?: "rootfs"
+        val rootfs = File(filesDir, dirName)
         val tmp = File(rootfs, "tmp").apply { mkdirs() }
         // A previous :x11 process that was killed leaves its socket and lock file behind.
         File(tmp, ".X11-unix/X0").delete()
@@ -53,7 +56,9 @@ class X11ServerService : Service() {
 
         Os.setenv("TMPDIR", tmp.absolutePath, true)
         Os.setenv("HOME", filesDir.absolutePath, true)
-        val xkb = File(rootfs, "usr/share/X11/xkb")
+        // Arch ships usr/share/X11/xkb as an ABSOLUTE symlink to /usr/share/xkeyboard-config-2, which resolves
+        // against the host here, so prefer the real directory when it exists. Alpine has no such dir: unchanged.
+        val xkb = File(rootfs, "usr/share/xkeyboard-config-2").takeIf { it.isDirectory } ?: File(rootfs, "usr/share/X11/xkb")
         if (xkb.isDirectory) {
             Os.setenv("XKB_CONFIG_ROOT", xkb.absolutePath, true)
         } else {

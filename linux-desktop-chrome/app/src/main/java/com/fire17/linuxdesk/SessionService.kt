@@ -23,6 +23,7 @@ import com.fire17.linuxdesk.bridge.ChromiumFlags
 import com.fire17.linuxdesk.bridge.FocusBridge
 import com.fire17.linuxdesk.genie.GenieRuntime
 import com.fire17.linuxdesk.genie.GenieSettings
+import com.fire17.linuxdesk.linux.Distro
 import com.fire17.linuxdesk.linux.ProotRuntime
 import com.fire17.linuxdesk.linux.RootfsInstaller
 import com.fire17.linuxdesk.x11.X11ServerService
@@ -69,6 +70,8 @@ class SessionService : Service() {
     @Volatile private var browser: Process? = null
     @Volatile private var stopping = false
     @Volatile private var xBound = false
+    /** The distro this session runs (set at the start of runSession; ALPINE until then). */
+    @Volatile private var sessionDistro: Distro = Distro.ALPINE
     private var wakeLock: PowerManager.WakeLock? = null
     private var focusBridge: FocusBridge? = null
     private lateinit var settings: LinuxDeskSettings
@@ -133,10 +136,23 @@ class SessionService : Service() {
     private fun runSession() {
         try {
             acquireWakeLock()
-            val installer = RootfsInstaller(this)
+            // The distro is fixed for the whole session (the launcher's choice when Start was pressed).
+            val distro = Distro.current(this)
+            sessionDistro = distro
+            val installer = RootfsInstaller(this, distro)
 
-            SessionBus.setState(State.INSTALLING_ROOTFS, getString(R.string.ld_state_rootfs))
-            SessionBus.log(installer.ensureInstalled { SessionBus.log(it) })
+            SessionBus.setState(State.INSTALLING_ROOTFS,
+                if (distro == Distro.ALPINE) getString(R.string.ld_state_rootfs) else "Preparing Omarchy (Arch Linux ARM) …")
+            var lastPct = -2
+            SessionBus.log(installer.ensureInstalled({ SessionBus.log(it) }) { pct ->
+                // First Omarchy run: the 829 MB download drives the state line (= the launcher's progress bar).
+                if (pct != lastPct) {
+                    lastPct = pct
+                    SessionBus.downloadPercent = pct
+                    if (pct in 0..100) SessionBus.setState(State.INSTALLING_ROOTFS, "Downloading Arch Linux ARM … $pct%")
+                }
+            })
+            SessionBus.downloadPercent = -1
 
             focusBridge?.stop()
             focusBridge = if (settings.autoKeyboard) FocusBridge().start() else null
@@ -145,12 +161,14 @@ class SessionService : Service() {
             // scripts executable; GenieRuntime runs setup-genie.sh by path, so it needs the bit too.
             File(installer.rootfsDir, "opt/linuxdesk/setup-genie.sh").takeIf { it.isFile }?.setExecutable(true, false)
 
-            val proot = ProotRuntime(this, settings.prootNoSeccomp)
+            val proot = ProotRuntime(this, settings.prootNoSeccomp, distro)
             proot.preflight().forEach { SessionBus.log(it) }
 
             if (!installer.packagesInstalled()) {
-                SessionBus.setState(State.INSTALLING_PACKAGES, getString(R.string.ld_state_packages))
-                val r = proot.runOnce("/opt/linuxdesk/setup-packages.sh", timeoutSec = 3600) { SessionBus.log(it) }
+                SessionBus.setState(State.INSTALLING_PACKAGES,
+                    if (distro == Distro.ALPINE) getString(R.string.ld_state_packages)
+                    else "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.6-0.9 GB). This takes a while …")
+                val r = proot.runOnce(distro.setupScript, timeoutSec = 3600) { SessionBus.log(it) }
                 if (r.exitCode != 0 || !installer.packagesInstalled()) {
                     SessionBus.setState(State.ERROR, "Package setup failed (exit=${r.exitCode}). Check network, then Start again.\n${r.tail.takeLast(600)}")
                     return
@@ -209,6 +227,7 @@ class SessionService : Service() {
         val i = Intent(this, X11ServerService::class.java)
             .putExtra(X11ServerService.EXTRA_DPI, resources.displayMetrics.densityDpi)
             .putExtra(X11ServerService.EXTRA_LEGACY_DRAWING, settings.legacyDrawing)
+            .putExtra(X11ServerService.EXTRA_ROOTFS, sessionDistro.dirName)
         xBound = bindService(i, xConnection, Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT)
         if (!xBound) error("bindService(X11ServerService) returned false")
     }
@@ -237,7 +256,7 @@ class SessionService : Service() {
         SessionBus.browserWindowUp = false
 
         // PulseHost.guestEnv() is empty when PulseAudio is not running, so Chromium then starts exactly as before.
-        val p = proot.start(listOf("/opt/linuxdesk/start-browser.sh") + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv(), sysvipc = USE_SYSVIPC)
+        val p = proot.start(listOf(proot.distro.startScript) + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv(), sysvipc = USE_SYSVIPC)
         browser = p
         Thread({
             try {
@@ -273,7 +292,7 @@ class SessionService : Service() {
             return
         }
         try {
-            launchBrowser(ProotRuntime(this, settings.prootNoSeccomp))
+            launchBrowser(ProotRuntime(this, settings.prootNoSeccomp, sessionDistro))
         } catch (t: Throwable) {
             SessionBus.setState(State.ERROR, "restart failed: ${t.message}")
         }
@@ -384,7 +403,7 @@ class SessionService : Service() {
      */
     private fun runPactl(script: String): Boolean {
         if (!PulseHost.running) return false
-        val r = ProotRuntime(this, settings.prootNoSeccomp).runOnce(script, timeoutSec = 15)
+        val r = ProotRuntime(this, settings.prootNoSeccomp, sessionDistro).runOnce(script, timeoutSec = 15)
         return r.exitCode == 0
     }
 

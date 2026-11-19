@@ -34,6 +34,43 @@
             android:textIsSelectable="true"
             android:textSize="14sp" />
 
+        <!-- Omarchy lane: first-run Arch Linux ARM download progress (hidden unless a download runs). -->
+        <ProgressBar
+            android:id="@+id/rootfs_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:max="100"
+            android:visibility="gone" />
+
+        <!-- Omarchy lane: the guest distro. Literal labels (the strings files belong to other lanes). -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Distro"
+            android:textStyle="bold" />
+
+        <RadioGroup
+            android:id="@+id/distro"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/distro_alpine"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Alpine (default: Chromium, no window manager)" />
+
+            <RadioButton
+                android:id="@+id/distro_omarchy"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Omarchy (Arch Linux ARM: Chrome + i3 with Omarchy's look; first run downloads ~0.8 GB + ~0.8 GB packages)" />
+        </RadioGroup>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

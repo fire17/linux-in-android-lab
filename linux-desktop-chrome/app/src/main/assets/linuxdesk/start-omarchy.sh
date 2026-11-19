@@ -1,0 +1,77 @@
+#!/bin/sh
+# LinuxDesk "Omarchy": start the i3 desktop with Omarchy's look, then Chrome as its first window.
+# Runs INSIDE the Arch Linux ARM guest under PRoot. Same argv contract as start-browser.sh, so the app and deskd
+# (LINUXDESK_BROWSER_CMD) can use either one: all arguments are browser flags plus the URL (ChromiumFlags.kt).
+#
+# Differences from start-browser.sh (Alpine):
+#   - i3 manages the windows, so fit-window.sh is NOT run. i3 tiles Chrome to the whole screen (minus the bar)
+#     and follows RandR resizes when the phone rotates. A small watcher still prints LINUXDESK_WINDOW_UP once,
+#     which the app waits for to show RUNNING.
+#   - The browser is google-chrome-stable (Omarchy's default), or chromium if Chrome is not installed.
+#   - --window-position/--window-size/--start-maximized are dropped: i3 sizes the window.
+# This script exits with the browser's code, which is what the app's "browser exited" state and deskd expect;
+# proot's --kill-on-exit then ends i3 and anything started from it. "Restart browser" starts both again.
+# (Keeping i3 up after the browser closes is OPEN: it needs a session-level parent other than the browser.)
+export DISPLAY="${DISPLAY:-:0}"
+export XDG_RUNTIME_DIR=/tmp/runtime-root
+export LANG="${LANG:-C.UTF-8}"
+export HOME="${HOME:-/root}"
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+
+i=0
+while [ ! -e /tmp/.X11-unix/X0 ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i + 1)); done
+[ -e /tmp/.X11-unix/X0 ] || echo "[omarchy] warning: /tmp/.X11-unix/X0 not found, trying anyway"
+
+BIN=""
+for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
+if [ -z "$BIN" ]; then
+  echo "[omarchy] no browser installed (setup-omarchy.sh did not finish?)"
+  exit 127
+fi
+
+# The theme renders once at setup; re-render if the config is missing (e.g. HOME was wiped).
+[ -f "$HOME/.config/i3/config" ] || python3 /opt/linuxdesk/omarchy/omarchy-theme.py "$(cat /etc/linuxdesk/omarchy-theme 2>/dev/null || echo tokyo-night)"
+
+# Drop flags that fight a window manager.
+n=$#
+while [ "$n" -gt 0 ]; do
+  a=$1; shift; n=$((n - 1))
+  case "$a" in
+    --window-position=*|--window-size=*|--start-maximized) ;;
+    *) set -- "$@" "$a" ;;
+  esac
+done
+
+I3=""
+if command -v i3 >/dev/null 2>&1 && ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then
+  i3 >/tmp/i3.log 2>&1 &
+  I3=$!
+  # Wait (max ~5 s) for i3 to own the screen, so Chrome is mapped as a managed (tiled) window.
+  i=0
+  while [ $i -lt 20 ] && ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; do
+    sleep 0.25; i=$((i + 1))
+  done
+  echo "[omarchy] i3 started (pid $I3)"
+else
+  echo "[omarchy] i3 already running or not installed; starting the browser alone"
+fi
+
+# LINUXDESK_WINDOW_UP: the app shows RUNNING when the first browser window is viewable.
+(
+  j=0
+  while [ $j -lt 240 ]; do
+    if xdotool search --onlyvisible --class 'chrom' >/dev/null 2>&1; then
+      echo "LINUXDESK_WINDOW_UP $(xdotool getdisplaygeometry 2>/dev/null | tr ' ' x)"
+      exit 0
+    fi
+    sleep 0.5; j=$((j + 1))
+  done
+) &
+WATCH=$!
+
+echo "[omarchy] exec $BIN $*"
+"$BIN" "$@"
+CODE=$?
+kill "$WATCH" 2>/dev/null
+echo "[omarchy] $BIN exited with code $CODE"
+exit $CODE

@@ -26,11 +26,16 @@ import java.util.concurrent.TimeUnit
  *  - The X11 socket needs no bind: lorie creates it at <rootfs>/tmp/.X11-unix/X0, which the guest already
  *    sees as /tmp/.X11-unix/X0.
  */
-class ProotRuntime(private val context: Context, private val noSeccomp: Boolean = false) {
+class ProotRuntime(
+    private val context: Context,
+    private val noSeccomp: Boolean = false,
+    /** Which guest to run. Default: the distro selected in the launcher (ALPINE unless Omarchy was picked). */
+    val distro: Distro = Distro.current(context),
+) {
 
     val nativeLibDir: File get() = File(context.applicationInfo.nativeLibraryDir)
     val prootBinary: File get() = File(nativeLibDir, "libproot.so")
-    val rootfsDir: File get() = File(context.filesDir, "rootfs")
+    val rootfsDir: File get() = distro.rootfsDir(context)
     private val tmpDir: File get() = File(context.filesDir, "proot-tmp").apply { mkdirs() }
     private val l2sDir: File get() = File(context.filesDir, "proot-l2s").apply { mkdirs() }
     private val shmDir: File get() = File(rootfsDir, "tmp/shm").apply { mkdirs() }
@@ -137,7 +142,7 @@ class ProotRuntime(private val context: Context, private val noSeccomp: Boolean 
             val f = File(nativeLibDir, n)
             lines += "  $n: " + if (f.isFile) "${f.length()} bytes, canExecute=${f.canExecute()}" else "MISSING"
         }
-        lines += "rootfs = ${rootfsDir.absolutePath} (etc exists: ${File(rootfsDir, "etc").isDirectory})"
+        lines += "rootfs = ${rootfsDir.absolutePath} (distro ${distro.id}, etc exists: ${File(rootfsDir, "etc").isDirectory})"
         lines += "seccomp acceleration: ${if (noSeccomp) "OFF (PROOT_NO_SECCOMP=1)" else "on"}"
         return lines
     }
