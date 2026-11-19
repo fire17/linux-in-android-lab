@@ -23,7 +23,7 @@ android {
         targetSdk = 36
         // CI passes its run number, so every build is a higher version than the last and installs as an update.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(100) ?: 1
-        versionName = "0.2.3"
+        versionName = "0.2.4"
 
         ndk {
             // arm64-v8a = real phones. x86_64 = the CI emulator smoke test.
@@ -113,6 +113,9 @@ dependencies {
     // The genie link, phase B (spec 01 §2): iroh endpoint with ALPN "linuxdesk/1". The same artifact Storage
     // Genie ships; the genie side uses pip iroh==1.1.0. Brings JNA + kotlinx-coroutines at runtime scope.
     implementation("computer.iroh:iroh-android:1.1.0")
+    // IrohLink runs iroh's suspend calls with runBlocking(Dispatchers.IO), as Storage Genie does. The stdlib-only
+    // bridge we used before never got Endpoint.bind's result on Android (bind timed out after 30 s).
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     testImplementation("junit:junit:4.13.2")
     // android.jar's org.json is a stub on the JVM (returns defaults); FrameTest/RouterTest need the real one.

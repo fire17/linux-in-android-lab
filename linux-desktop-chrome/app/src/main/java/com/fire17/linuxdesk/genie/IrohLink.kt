@@ -6,12 +6,10 @@ import computer.iroh.RecvStream
 import computer.iroh.SecretKey
 import computer.iroh.SendStream
 import computer.iroh.presetN0
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.coroutines.startCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 /**
  * Phase B transport (spec 01 §2): the phone's iroh endpoint, ALPN exactly `linuxdesk/1` — a port of Storage
@@ -22,11 +20,12 @@ import kotlin.coroutines.startCoroutine
  * If iroh cannot bind (no network), it reports offline and retries every 3 s, like Link.kt.
  *
  * The uniffi iroh API is `suspend` (checked against iroh-1.1.0-sources.jar: bind/acceptNext/accept/alpn/connect/
- * acceptBi/readExact/writeAll/finish/shutdown suspend; recv/send/close not). This app has no kotlinx-coroutines
- * on its compile classpath (iroh pulls it at runtime scope only), so [blocking] runs each suspend call with the
- * stdlib's `startCoroutine` under EmptyCoroutineContext + a latch. uniffi suspends via
- * `suspendCancellableCoroutine` and resumes from its Rust callback thread; with no dispatcher in the context
- * that resumes our latch directly. Each connection gets its own thread, as in WireServer.
+ * acceptBi/readExact/writeAll/finish/shutdown suspend; recv/send/close not). [blocking] runs each suspend call
+ * with kotlinx `runBlocking(Dispatchers.IO)`, the same coroutine setup Storage Genie's working Link.kt uses
+ * (`CoroutineScope(SupervisorJob() + Dispatchers.IO)`). The first version used a stdlib-only bridge
+ * (`startCoroutine` + EmptyCoroutineContext + a latch); on Android, `Endpoint.bind` never resumed it and timed
+ * out after 30 s, so the phone never came online (genie-e2e run 44575167725: "TimeoutException", empty
+ * discovery record). Each connection gets its own thread, as in WireServer.
  */
 class IrohLink(
     private val secretKey: () -> SecretKey,
@@ -37,20 +36,14 @@ class IrohLink(
     companion object {
         val ALPN: ByteArray = Router.PROTO.toByteArray(Charsets.UTF_8)
 
-        /** Runs a suspend block to completion on this thread (stdlib only). Rethrows its failure. */
-        fun <T> blocking(timeoutMs: Long = 0, block: suspend () -> T): T {
-            val latch = CountDownLatch(1)
-            var out: Result<T>? = null
-            block.startCoroutine(object : Continuation<T> {
-                override val context: CoroutineContext = EmptyCoroutineContext
-                override fun resumeWith(result: Result<T>) { out = result; latch.countDown() }
-            })
-            if (timeoutMs > 0) {
-                if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) throw java.util.concurrent.TimeoutException()
-            } else {
-                latch.await()
+        /** Runs a suspend block to completion on this thread (kotlinx, Dispatchers.IO). Rethrows its failure. */
+        fun <T> blocking(timeoutMs: Long = 0, block: suspend () -> T): T = runBlocking(Dispatchers.IO) {
+            if (timeoutMs <= 0) return@runBlocking block()
+            try {
+                withTimeout(timeoutMs) { block() }
+            } catch (_: TimeoutCancellationException) {
+                throw java.util.concurrent.TimeoutException("iroh call took over $timeoutMs ms")
             }
-            return out!!.getOrThrow()
         }
     }
 
