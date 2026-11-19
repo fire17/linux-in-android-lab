@@ -42,6 +42,10 @@ if ! command -v sway >/dev/null 2>&1; then
 fi
 
 chmod +x /opt/linuxdesk/omarchy/*.sh 2>/dev/null || true
+# bubblewrap cannot sandbox under PRoot, so glycin failed every image (no wallpaper; wofi crashed on Super+Space).
+# The shim runs glycin's loaders unsandboxed; /usr/local/bin is ahead of /usr/bin on PATH (2026-11-20, 0.2.29).
+cmp -s /opt/linuxdesk/omarchy/bwrap-shim.sh /usr/local/bin/bwrap 2>/dev/null \
+  || install -m 755 /opt/linuxdesk/omarchy/bwrap-shim.sh /usr/local/bin/bwrap 2>/dev/null || true
 
 # Omarchy's apps (setup-omarchy.sh stage 8): same background install as start-omarchy.sh; never blocks the browser.
 # The sway packages themselves are installed by setup's stage 9, which skips on low memory; this script only runs once

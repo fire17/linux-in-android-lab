@@ -31,6 +31,10 @@ fi
 
 # The app copies its helper dir without exec bits; i3 bindings and rofi entries run these scripts.
 chmod +x /opt/linuxdesk/omarchy/*.sh 2>/dev/null || true
+# bubblewrap cannot sandbox under PRoot, so glycin failed every image (no wallpaper; wofi crashed on Super+Space).
+# The shim runs glycin's loaders unsandboxed; /usr/local/bin is ahead of /usr/bin on PATH (2026-11-20, 0.2.29).
+cmp -s /opt/linuxdesk/omarchy/bwrap-shim.sh /usr/local/bin/bwrap 2>/dev/null \
+  || install -m 755 /opt/linuxdesk/omarchy/bwrap-shim.sh /usr/local/bin/bwrap 2>/dev/null || true
 
 # One UI scale S for the whole desktop = Chrome's --force-device-scale-factor (ChromiumFlags.kt: Android density x the
 # app's scale %), taken from our own argv: deskd's launch strips LINUXDESK_* from the environment, the flags arrive on

@@ -252,6 +252,7 @@ object GenieRuntime {
             env += "LINUXDESK_BROWSER_CMD=${p.startScript}"
             env += "LINUXDESK_BROWSER_FLAGS=" + JSONArray(flags).toString()
         }
+        killStaleDeskd()
         val proc = try {
             p.start(listOf("/usr/bin/python3", DESKD), env, sysvipc = withBrowser && sysvipc)
         } catch (t: Throwable) {
@@ -307,6 +308,21 @@ object GenieRuntime {
         synchronized(lock) {
             if (running && deskdWanted && deskd == null) startDeskdLocked(withBrowser)
         }
+    }
+
+    /**
+     * 0.2.29: a deskd from an earlier session (often the other distro, whose pidfile we cannot see) still holding
+     * 8765 made the new deskd loop on "port busy" until Force stop. Called with no deskd of ours running, so every
+     * deskd process visible here (own uid only, hidepid) is stale: TERM, then KILL what is left after 2 s.
+     */
+    private fun killStaleDeskd() {
+        val stale = try { StaleDeskd.find() } catch (_: Throwable) { emptyList() }
+        if (stale.isEmpty()) return
+        log("clearing ${stale.size} leftover deskd process(es) from an earlier session: $stale")
+        stale.forEach { try { android.os.Process.sendSignal(it, 15) } catch (_: Throwable) {} }
+        val until = System.currentTimeMillis() + 2_000
+        while (System.currentTimeMillis() < until && stale.any { File("/proc/$it").exists() }) Thread.sleep(100)
+        stale.filter { File("/proc/$it").exists() }.forEach { try { android.os.Process.killProcess(it) } catch (_: Throwable) {} }
     }
 
     private fun killDeskdLocked() {
