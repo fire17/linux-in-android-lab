@@ -60,7 +60,7 @@ jobs:
           unzip -l "$APK" | grep -E ' assets/' || echo "NO assets/ entries in APK"
           echo "---------------------------------------"
           unzip -l "$APK" | grep -E 'lib/(arm64-v8a|x86_64)/lib(proot|proot_loader|talloc|android-shmem)\.so'
-          unzip -l "$APK" | grep -E 'assets/rootfs/alpine-(aarch64|x86_64)\.tar\.gz'
+          unzip -l "$APK" | grep -E 'assets/rootfs/alpine-(aarch64|x86_64)\.rootfs\.bin'
           "$ANDROID_HOME"/build-tools/36.0.0/aapt2 dump xmltree --file AndroidManifest.xml "$APK" | grep -i extractNativeLibs || true
           sha256sum "$APK"
 

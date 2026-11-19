@@ -16,9 +16,12 @@ BRANCH="v3.24"
 MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 
 # asset-name  alpine-arch  sha256  size
+# Assets are named *.rootfs.bin, NOT *.tar.gz: AGP's asset merger gunzips *.gz assets into the APK
+# (alpine-aarch64.tar.gz landed as alpine-aarch64.tar, 8.9 MB, in CI run 44508522735), which broke
+# the app's lookup AND its GZIPInputStream. A neutral extension keeps the bytes exactly as pinned.
 PINS=$(cat <<'EOF'
-alpine-aarch64.tar.gz aarch64 4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de 4029843
-alpine-x86_64.tar.gz  x86_64  cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012 3704088
+alpine-aarch64.rootfs.bin aarch64 4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de 4029843
+alpine-x86_64.rootfs.bin  x86_64  cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012 3704088
 EOF
 )
 

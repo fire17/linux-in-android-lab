@@ -75,8 +75,8 @@ val requiredPayload: List<String> =
         listOf("libproot.so", "libproot_loader.so", "libtalloc.so", "libandroid-shmem.so")
             .map { "src/main/jniLibs/$abi/$it" }
     } + listOf(
-        "src/main/assets/rootfs/alpine-aarch64.tar.gz",
-        "src/main/assets/rootfs/alpine-x86_64.tar.gz",
+        "src/main/assets/rootfs/alpine-aarch64.rootfs.bin",
+        "src/main/assets/rootfs/alpine-x86_64.rootfs.bin",
     )
 
 val verifyNativePayload by tasks.registering {

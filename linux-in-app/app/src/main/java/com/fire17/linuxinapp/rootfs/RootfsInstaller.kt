@@ -21,7 +21,7 @@ class RootfsInstaller(private val context: Context) {
     fun assetForDevice(): String {
         val abi = Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "x86_64" }
             ?: error("Unsupported ABI ${Build.SUPPORTED_ABIS.joinToString()} — this build ships arm64-v8a and x86_64 only")
-        return if (abi == "arm64-v8a") "rootfs/alpine-aarch64.tar.gz" else "rootfs/alpine-x86_64.tar.gz"
+        return if (abi == "arm64-v8a") "rootfs/alpine-aarch64.rootfs.bin" else "rootfs/alpine-x86_64.rootfs.bin"
     }
 
     private fun bundledVersion(): String =
