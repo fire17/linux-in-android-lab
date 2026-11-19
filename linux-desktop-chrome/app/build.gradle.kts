@@ -1,0 +1,116 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.fire17.linuxdesk"
+    compileSdk = 36
+    // Must be the same NDK as upstream's `termuxX11NdkVersion` (third_party/termux-x11/lorie/version.gradle).
+    // Otherwise :lorie's CMake configuration differs between the app and the library, and the X server
+    // gets compiled twice.
+    ndkVersion = "29.0.14206865"
+
+    defaultConfig {
+        applicationId = "com.fire17.linuxdesk"
+        minSdk = 26
+        // targetSdk 36 works because nothing is execve()'d from app data (see README "Why targetSdk 36"):
+        //  - proot ships as lib*.so in jniLibs and runs from nativeLibraryDir (apk_data_file, exec allowed);
+        //  - proot's loader (also in nativeLibraryDir) mmaps the guest ELFs instead of exec'ing them;
+        //  - the X server is libXlorie.so, loaded into our own :x11 process (xkbcomp is compiled in).
+        targetSdk = 36
+        versionCode = 1
+        versionName = "0.1.0"
+
+        ndk {
+            // arm64-v8a = real phones. x86_64 = the CI emulator smoke test.
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    packaging {
+        jniLibs {
+            // REQUIRED: the installer must extract libproot.so & co. to nativeLibraryDir as real files
+            // (extractNativeLibs=true). Otherwise those "executables" stay inside the APK and cannot be exec'd.
+            useLegacyPackaging = true
+            // Keep the sha256-pinned proot binaries byte-identical (no strip pass).
+            keepDebugSymbols += listOf("**/libproot.so", "**/libproot_loader.so", "**/libproot_loader32.so",
+                "**/libtalloc.so", "**/libandroid-shmem.so")
+        }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    // Termux:X11's X server as an Android library (GPL-3.0). It comes from third_party/termux-x11, which
+    // scripts/fetch-termux-x11.sh clones at a pinned commit. Upstream lorie's build.gradle finds THIS module
+    // as its host through this exact `implementation` dependency, and bakes our applicationId into
+    // its BuildConfig.APPLICATION_ID (the package its ACTION_START broadcast is sent to).
+    implementation(project(":lorie"))
+
+    // lorie keeps its deps as `implementation`, so we must declare what our code compiles against:
+    // DesktopActivity extends com.termux.x11.MainActivity (an AppCompatActivity), and Prefs extends
+    // androidx.preference.PreferenceDataStore.
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.preference:preference:1.2.1")
+
+    testImplementation("junit:junit:4.13.2")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fail fast with a helpful message if the binary payload was not fetched (scripts/fetch-all.sh).
+// ---------------------------------------------------------------------------------------------
+val requiredPayload: List<String> =
+    listOf("arm64-v8a", "x86_64").flatMap { abi ->
+        listOf("libproot.so", "libproot_loader.so", "libtalloc.so", "libandroid-shmem.so")
+            .map { "src/main/jniLibs/$abi/$it" }
+    } + listOf(
+        "src/main/assets/rootfs/alpine-aarch64.rootfs.bin",
+        "src/main/assets/rootfs/alpine-x86_64.rootfs.bin",
+        "src/main/assets/rootfs/VERSION",
+    )
+
+val verifyNativePayload by tasks.registering {
+    group = "verification"
+    description = "Checks that scripts/fetch-all.sh has populated jniLibs/ and assets/rootfs/."
+    val files = requiredPayload.map { layout.projectDirectory.file(it).asFile }
+    doLast {
+        val missing = files.filterNot { it.isFile && it.length() > 0L }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "LinuxDesk binary payload missing. Run ./scripts/fetch-all.sh from the project root.\n" +
+                    missing.joinToString("\n") { "  - $it" }
+            )
+        }
+    }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(verifyNativePayload)
+}

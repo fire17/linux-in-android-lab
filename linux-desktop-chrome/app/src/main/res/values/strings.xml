@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ld_app_name">LinuxDesk</string>
+    <string name="ld_tagline">Desktop Chromium for Linux, running inside this app. The phone screen is the Linux display.</string>
+    <string name="ld_channel_name">LinuxDesk session</string>
+    <string name="ld_notification_text">Linux desktop session is running (X server + Chromium)</string>
+
+    <string name="ld_start">Start</string>
+    <string name="ld_open_desktop">Open desktop</string>
+    <string name="ld_stop">Stop</string>
+    <string name="ld_restart_browser">Restart browser</string>
+    <string name="ld_toggle_keyboard">Show or hide keyboard (long-press for menu)</string>
+    <string name="ld_x_settings">Display &amp; input settings</string>
+    <string name="ld_back_to_launcher">Back to launcher</string>
+
+    <string name="ld_home_url">Start page</string>
+    <string name="ld_mode_browser">Full desktop browser (tabs + address bar)</string>
+    <string name="ld_mode_app">App window (--app, no browser UI)</string>
+    <string name="ld_mode_kiosk">Kiosk (--kiosk, fullscreen, no UI)</string>
+    <string name="ld_scale_label">Size: %1$d%% of Android (device scale factor %2$s)</string>
+
+    <string name="ld_opt_auto_kbd">Pop up the keyboard when a web text field is focused (experimental)</string>
+    <string name="ld_opt_legacy">Legacy drawing (try this if the screen stays black)</string>
+    <string name="ld_opt_noseccomp">Slow-safe PRoot mode (PROOT_NO_SECCOMP=1)</string>
+    <string name="ld_opt_gpu">Allow GPU in Chromium (usually no effect inside PRoot)</string>
+
+    <string name="ld_phantom_help">One-time setup (Android 12+): Chromium uses many processes, and Android kills apps with more than 32 child processes. Developer options → \"Disable child process restrictions\" turns this off. From a PC you can instead run: adb shell settings put global settings_enable_monitor_phantom_procs false</string>
+    <string name="ld_open_dev_options">Open Developer options</string>
+    <string name="ld_dev_options_missing">Enable Developer options first (Settings → About phone → tap Build number 7 times).</string>
+    <string name="ld_sandbox_warning">Chromium runs with --no-sandbox, because Android does not allow the sandbox it needs. Do not use it for banking or other sensitive accounts.</string>
+
+    <string name="ld_log">Log</string>
+    <string name="ld_copy_log">Copy log</string>
+    <string name="ld_copied">Log copied</string>
+    <string name="ld_state_fmt">%1$s\n%2$s</string>
+
+    <string name="ld_state_rootfs">Preparing Linux (Alpine) …</string>
+    <string name="ld_state_packages">First run: downloading Chromium + fonts (~150–250 MB). This takes a few minutes …</string>
+    <string name="ld_state_x">Starting X server …</string>
+    <string name="ld_state_display">Connecting the display …</string>
+    <string name="ld_state_browser">Starting Chromium …</string>
+    <string name="ld_state_running">Running</string>
+    <string name="ld_state_browser_exited">Chromium exited (code %1$d). Long-press the keyboard button → Restart browser.</string>
+    <string name="ld_state_stopping">Stopping …</string>
+    <string name="ld_state_stopped">Stopped</string>
+
+    <string name="ld_license">LinuxDesk is free software under the GNU GPL v3 (it embeds Termux:X11\'s lorie X server, GPL-3.0). Linux userspace: Alpine Linux under PRoot (GPL-2.0+). Source: see README.</string>
+</resources>

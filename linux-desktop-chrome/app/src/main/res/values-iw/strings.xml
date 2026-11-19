@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ld_tagline">‏Chromium מלא של לינוקס בתוך האפליקציה. המסך של הטלפון הוא המסך של הלינוקס.</string>
+    <string name="ld_channel_name">סשן LinuxDesk</string>
+    <string name="ld_notification_text">סשן לינוקס פעיל (שרת X ו-Chromium)</string>
+
+    <string name="ld_start">הפעלה</string>
+    <string name="ld_open_desktop">פתיחת המסך</string>
+    <string name="ld_stop">עצירה</string>
+    <string name="ld_restart_browser">הפעלה מחדש של הדפדפן</string>
+    <string name="ld_toggle_keyboard">הצגה או הסתרה של המקלדת (לחיצה ארוכה פותחת תפריט)</string>
+    <string name="ld_x_settings">הגדרות תצוגה וקלט</string>
+    <string name="ld_back_to_launcher">חזרה למסך ההפעלה</string>
+
+    <string name="ld_home_url">דף פתיחה</string>
+    <string name="ld_mode_browser">דפדפן שולחני מלא (לשוניות ושורת כתובת)</string>
+    <string name="ld_mode_app">חלון אפליקציה (‎--app, בלי ממשק דפדפן)</string>
+    <string name="ld_mode_kiosk">קיוסק (‎--kiosk, מסך מלא, בלי ממשק)</string>
+    <string name="ld_scale_label">גודל: %1$d%% מאנדרואיד (מקדם קנה מידה %2$s)</string>
+
+    <string name="ld_opt_auto_kbd">המקלדת תקפוץ כשנוגעים בשדה טקסט בדף (ניסיוני)</string>
+    <string name="ld_opt_legacy">ציור במצב ישן (legacy). כדאי לנסות אם המסך נשאר שחור</string>
+    <string name="ld_opt_noseccomp">מצב PRoot איטי ובטוח (PROOT_NO_SECCOMP=1)</string>
+    <string name="ld_opt_gpu">לאפשר GPU ב-Chromium (בדרך כלל אין לזה השפעה בתוך PRoot)</string>
+
+    <string name="ld_phantom_help">הגדרה חד-פעמית (אנדרואיד 12 ומעלה): ל-Chromium יש הרבה תהליכים, ואנדרואיד הורג אפליקציות שיש להן יותר מ-32 תהליכי בן. כדי לבטל את זה: אפשרויות מפתחים ← \"Disable child process restrictions\". אפשר גם ממחשב: adb shell settings put global settings_enable_monitor_phantom_procs false</string>
+    <string name="ld_open_dev_options">פתיחת אפשרויות מפתחים</string>
+    <string name="ld_dev_options_missing">קודם צריך להפעיל את אפשרויות המפתחים (הגדרות ← אודות הטלפון ← 7 הקשות על מספר ה-Build).</string>
+    <string name="ld_sandbox_warning">‏Chromium רץ עם ‎--no-sandbox, כי אנדרואיד לא מאפשר את ארגז החול שהוא צריך. לא להשתמש בו לבנק או לחשבונות רגישים אחרים.</string>
+
+    <string name="ld_log">יומן</string>
+    <string name="ld_copy_log">העתקת היומן</string>
+    <string name="ld_copied">היומן הועתק</string>
+
+    <string name="ld_state_rootfs">מכין את הלינוקס (Alpine) …</string>
+    <string name="ld_state_packages">הפעלה ראשונה: מוריד את Chromium ופונטים (בערך 150 עד 250MB). זה לוקח כמה דקות …</string>
+    <string name="ld_state_x">מפעיל את שרת ה-X …</string>
+    <string name="ld_state_display">מחבר את המסך …</string>
+    <string name="ld_state_browser">מפעיל את Chromium …</string>
+    <string name="ld_state_running">פועל</string>
+    <string name="ld_state_browser_exited">‏Chromium נסגר (קוד %1$d). לחיצה ארוכה על כפתור המקלדת ← הפעלה מחדש של הדפדפן.</string>
+    <string name="ld_state_stopping">עוצר …</string>
+    <string name="ld_state_stopped">נעצר</string>
+</resources>

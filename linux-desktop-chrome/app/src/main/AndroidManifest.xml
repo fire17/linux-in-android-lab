@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LinuxDesk. The merged manifest also contains everything from upstream lorie's manifest
+  (third_party/termux-x11/lorie/src/main/AndroidManifest.xml): LorieApp$Receiver, which receives the
+  X server's ACTION_START broadcast; LoriePreferences; the KeyInterceptor accessibility service; and
+  others. This file overrides only what has to differ.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".LinuxDeskApp"
+        tools:replace="android:name"
+        android:allowBackup="false"
+        android:icon="@mipmap/ld_ic_launcher"
+        android:label="@string/ld_app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.LinuxDesk">
+
+        <!-- Setup and status screen. It routes straight to the desktop once a session is running. -->
+        <activity
+            android:name=".LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- The Linux display. It subclasses com.termux.x11.MainActivity, whose LorieView (a SurfaceView)
+             is where the embedded X server renders. Attributes copied from upstream's MainActivity
+             declaration: lorie expects to handle rotation and keyboard itself, without being recreated. -->
+        <!-- Own task (like upstream's taskAffinity=".MainActivity"), so going back to the launcher does
+             not destroy the display. -->
+        <activity
+            android:name=".DesktopActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.fire17.linuxdesk.desktop"
+            android:theme="@style/LorieAppTheme"
+            android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="stateHidden|adjustNothing" />
+
+        <!-- Upstream's own X11 window activity stays in the manifest, because lorie's code references it,
+             but it must not appear in the launcher (Termux:X11 icon) or offer home/shortcut entries. -->
+        <activity
+            android:name="com.termux.x11.MainActivity"
+            tools:node="merge">
+            <intent-filter tools:node="removeAll" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                tools:node="remove" />
+        </activity>
+
+        <!-- Owns the whole session: rootfs, package setup, the X server binding, and the Chromium process tree. -->
+        <service
+            android:name=".SessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a user-started Linux desktop session (X server + Chromium) alive while the user works in it." />
+        </service>
+
+        <!-- The embedded X server (libXlorie) runs in its own process, as DroidDesk does. Its native threads
+             cannot be stopped cleanly, so the process is killed when the session ends. -->
+        <service
+            android:name=".x11.X11ServerService"
+            android:exported="false"
+            android:process=":x11" />
+    </application>
+</manifest>

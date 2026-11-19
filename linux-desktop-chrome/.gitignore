@@ -1,0 +1,21 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Fetched at CI/build time by scripts/fetch-*.sh. Never commit these.
+third_party/
+app/src/main/jniLibs/
+app/src/main/assets/rootfs/
+.fetch-cache/
+
+# `gradle wrapper` can generate these. Only the properties file is committed.
+gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat

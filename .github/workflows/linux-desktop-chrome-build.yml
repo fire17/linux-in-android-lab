@@ -1,0 +1,134 @@
+# LinuxDesk CI: fetch the pinned sources and binaries, build the debug APK, upload it.
+# NOTE: GitHub runs workflows only from the REPO ROOT's .github/workflows/. If this project is pushed as
+# its own repo, this file works unchanged. In a monorepo subfolder, copy it to the root and set APP_DIR to
+# the subfolder (e.g. apps/linux-desktop-chrome).
+name: build
+
+on:
+  push:
+    paths: ["linux-desktop-chrome/**", ".github/workflows/linux-desktop-chrome-build.yml"]
+  workflow_dispatch:
+
+env:
+  APP_DIR: linux-desktop-chrome
+  GRADLE_VERSION: "8.14.3"
+  # Must match app/build.gradle.kts `ndkVersion` and upstream lorie/version.gradle.
+  NDK_VERSION: "29.0.14206865"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: ${{ env.APP_DIR }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      # android-34: upstream :lorie and :shell-loader:stub compile with compileSdkVersion 34.
+      - name: Install SDK platforms 36 + 34, build-tools, NDK ${{ env.NDK_VERSION }}, CMake
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "platforms;android-34" "build-tools;36.0.0" "platform-tools" \
+                     "ndk;${NDK_VERSION}" "cmake;3.22.1"
+
+      - name: Host tools needed by lorie's CMake (python3, bison, patch)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison python3 patch
+
+      - name: Set up Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Cache termux-x11 checkout
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.APP_DIR }}/third_party/termux-x11
+          key: termux-x11-${{ hashFiles(format('{0}/scripts/fetch-termux-x11.sh', env.APP_DIR)) }}
+
+      - name: Fetch pinned sources and binaries (termux-x11 @ commit, proot sha256, Alpine sha256)
+        run: bash scripts/fetch-all.sh
+
+      - name: Show payload
+        run: |
+          git -C third_party/termux-x11 log -1 --format='termux-x11 %H %cd'
+          find app/src/main/jniLibs app/src/main/assets/rootfs -type f -exec ls -l {} \;
+
+      - name: Unit tests (Chromium flag builder)
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
+
+      - name: Build debug APK
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Check APK contents
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          unzip -l "$APK" | grep -E 'lib/(arm64-v8a|x86_64)/lib(Xlorie|proot|proot_loader|talloc|android-shmem)\.so'
+          unzip -l "$APK" | grep -E 'assets/(rootfs/alpine-(aarch64|x86_64)\.rootfs\.bin|linuxdesk/start-browser\.sh)'
+          "$ANDROID_HOME"/build-tools/36.0.0/aapt2 dump badging "$APK" | grep -E "^package:|targetSdk|application-label"
+          "$ANDROID_HOME"/build-tools/36.0.0/aapt2 dump xmltree --file AndroidManifest.xml "$APK" | grep -iE 'extractNativeLibs|X11ServerService|DesktopActivity' || true
+          ls -l "$APK"; sha256sum "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: LinuxDesk-debug-apk
+          path: ${{ env.APP_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  # Best-effort evidence on an x86_64 emulator (non-blocking): install the APK, autostart a session, wait,
+  # then dump the log and a screenshot. It shows how far the pipeline gets (rootfs → apk add chromium →
+  # X server → Chromium window) on real Android, but not on a phone.
+  emulator-smoke:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: LinuxDesk-debug-apk
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Smoke test on emulator (API 34, x86_64)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb install -r -g app-debug.apk
+            adb shell settings put global settings_enable_monitor_phantom_procs false || true
+            adb shell am start -n com.fire17.linuxdesk/.LauncherActivity --ez autostart true --es url about:blank
+            sleep 600
+            adb logcat -d -s LinuxDeskSession:* LinuxDeskX11:* LinuxDesk:* RootfsInstaller:* FocusBridge:* AndroidRuntime:E | tail -300
+            adb exec-out screencap -p > smoke.png || true
+            adb logcat -d | grep -E 'LINUXDESK_WINDOW_UP|\[RUNNING\]' && echo "SMOKE: Chromium window came up" || echo "SMOKE: no Chromium window seen"
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: LinuxDesk-emulator-screenshot
+          path: smoke.png
+          if-no-files-found: ignore
