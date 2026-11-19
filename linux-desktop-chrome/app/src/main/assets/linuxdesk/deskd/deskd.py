@@ -921,17 +921,17 @@ def main(argv):
             flags = [str(x) for x in json.loads(os.environ["LINUXDESK_BROWSER_FLAGS"])]
         except ValueError:
             raise SystemExit("[deskd] LINUXDESK_BROWSER_FLAGS is not a JSON list")
-    try:
-        srv = Server((o.host, o.port), Handler)
-    except OSError as e:
-        log("deskd: port busy %s:%d (%s); not falling back to another address" % (o.host, o.port, e.strerror))
+    srv = _bind_taking_over(o.host, o.port)
+    if srv is None:
         return 3
+    _write_pidfile()
     if KEY is None:
         log("no session key in env: only a paired token (genie.hash) can connect")
     log("v%s listening on %s:%d" % (VERSION, o.host, o.port))
 
     b = cdp.B
     cdp.XBOX_HOOK = xbox_hook
+    cdp.PGID_HOOK = note_browser_pgid
     b.fallback = "port" if o.cdp_fallback == "port" else None
     if o.cdp_attach:
         b.attach_port = o.cdp_attach
@@ -960,7 +960,100 @@ def main(argv):
     finally:
         b.stop()
         srv.server_close()
+        _remove_pidfile()
     return 0
+
+
+# ---------------------------------------------------------------------------------- takeover of a stale deskd
+# On the phone, the app stops a session by killing proot; a deskd (and the Chromium it launched in its own process
+# group) can survive that and keep 127.0.0.1:8765. The next deskd then got "port busy" five times and the app gave
+# up (Tami's phone, 2026-11-19 17:31). Each deskd now records its pid and Chromium's process group; a new deskd
+# that finds the port busy stops exactly those (never anything matched by name), then binds again.
+
+def _pidfile():
+    return os.path.join(CFG["run_dir"], "deskd.pid")
+
+
+def _write_pidfile():
+    try:
+        os.makedirs(CFG["run_dir"], exist_ok=True)
+        with open(_pidfile(), "w") as f:
+            json.dump({"pid": os.getpid(), "browser_pgid": None}, f)
+    except OSError:
+        pass
+
+
+def note_browser_pgid(pgid):
+    """cdp.py calls this after it starts Chromium (start_new_session=True, so its pid is its process group)."""
+    try:
+        with open(_pidfile()) as f:
+            d = json.load(f)
+        if d.get("pid") == os.getpid():
+            d["browser_pgid"] = pgid
+            with open(_pidfile(), "w") as f:
+                json.dump(d, f)
+    except (OSError, ValueError):
+        pass
+
+
+def _remove_pidfile():
+    try:
+        with open(_pidfile()) as f:
+            if json.load(f).get("pid") == os.getpid():
+                os.remove(_pidfile())
+    except (OSError, ValueError):
+        pass
+
+
+def _stop_previous():
+    """Stops the deskd named in the pid file, and its Chromium group. Returns True if it signalled something."""
+    try:
+        with open(_pidfile()) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return False
+    pid, pgid = d.get("pid"), d.get("browser_pgid")
+    hit = False
+    if isinstance(pgid, int) and pgid > 1:
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+            hit = True
+        except OSError:
+            pass
+    if isinstance(pid, int) and pid > 1 and pid != os.getpid():
+        try:
+            os.kill(pid, signal.SIGTERM)
+            hit = True
+        except OSError:
+            pass
+    if hit:
+        time.sleep(1.5)
+        for target, killer in ((pgid, os.killpg), (pid, os.kill)):
+            if isinstance(target, int) and target > 1 and target != os.getpid():
+                try:
+                    killer(target, signal.SIGKILL)
+                except OSError:
+                    pass
+    return hit
+
+
+def _bind_taking_over(host, port, wait_s=10.0):
+    try:
+        return Server((host, port), Handler)
+    except OSError as e:
+        first = e
+    stopped = _stop_previous()
+    log("deskd: port %s:%d busy (%s); %s" % (host, port, first.strerror,
+        "stopped the previous deskd, retrying" if stopped else "no pid file, waiting for the port"))
+    end = time.time() + wait_s
+    while time.time() < end:
+        time.sleep(0.5)
+        try:
+            return Server((host, port), Handler)
+        except OSError:
+            continue
+    log("deskd: port busy %s:%d after %.0f s; not falling back to another address" % (host, port, wait_s))
+    return None
 
 
 if __name__ == "__main__":

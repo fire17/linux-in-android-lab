@@ -365,6 +365,7 @@ class Browser(object):
             raise VerbError("not_ready", "cannot start the browser: %s" % e)
         os.close(c3)
         os.close(c4)
+        _note_pgid(self.proc)
         os.set_blocking(from_r, True)
         conn = CDPConn(PipeTransport(to_w, from_r))
         try:
@@ -390,6 +391,7 @@ class Browser(object):
         argv = list(self.cmd) + list(self.args) + [
             "--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1", "--remote-allow-origins="]
         self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, env=self._env(), start_new_session=True)
+        _note_pgid(self.proc)
         deadline = time.time() + 30
         while time.time() < deadline:
             try:
@@ -860,7 +862,18 @@ def _ax_nodes(tid, interactive_only, max_nodes, with_boxes):
     return nodes, truncated
 
 
-XBOX_HOOK = None      # set by deskd: fn(tid, m) -> ((winX, winY) or None, calibrated: bool)
+XBOX_HOOK = None
+# deskd sets this to record Chromium's process group in its pid file (stale-deskd takeover).
+PGID_HOOK = None
+
+
+def _note_pgid(proc):
+    if PGID_HOOK and proc is not None:
+        try:
+            PGID_HOOK(proc.pid)
+        except Exception:
+            pass
+      # set by deskd: fn(tid, m) -> ((winX, winY) or None, calibrated: bool)
 
 
 def v_tree(a):
