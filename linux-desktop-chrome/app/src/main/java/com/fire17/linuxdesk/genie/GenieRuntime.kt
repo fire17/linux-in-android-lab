@@ -65,6 +65,8 @@ object GenieRuntime {
     private val restarts = ArrayDeque<Long>()
     @Volatile private var lastNoteAt = 0L
     private val listener: () -> Unit = { reconcileAsync() }
+    /** OTA v1 health check: deskd's relay is connected (it answered the hello). */
+    fun deskdReady(): Boolean = relay?.ready() == true
 
     private fun log(s: String) = SessionBus.log("genie: $s")
 

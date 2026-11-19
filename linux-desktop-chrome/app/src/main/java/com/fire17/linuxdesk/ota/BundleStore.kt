@@ -172,8 +172,14 @@ class BundleStore(
     }
 
     /** Call at session start (before installHelpers). Rolls back a trial whose previous session never reported health. */
-    fun beginSession() = synchronized(lock) {
+    fun beginSession(): Unit = synchronized(lock) {
         val s = state()
+        // Plan §3.2: an APK newer than the one the bundle was applied under ships a newer bundle 0 → it wins.
+        // Clear active + prev (once: app_code_at_apply is reset by the clear). `highest` is kept (anti-downgrade).
+        val appliedUnder = s.optLong("app_code_at_apply", 0)
+        if (File(active, MANIFEST).isFile && appliedUnder in 1 until appVersionCode) {
+            clearForApkUpgrade(appliedUnder); return@synchronized
+        }
         if (!s.optBoolean("trial")) return@synchronized
         if (s.optBoolean("trial_started")) {
             rollback("trial session ended without a health report (app died?)")
@@ -201,7 +207,23 @@ class BundleStore(
     }
 
     /** active → removed, prev → active (or bundle 0 if there is no prev). Local; `highest` is NOT lowered. */
-    fun rollback(reason: String) = synchronized(lock) {
+    /** The session was stopped by the user before a verdict: keep the trial, but let the next session judge it. */
+    fun abandonTrialSession(): Unit = synchronized(lock) {
+        val s = state()
+        if (s.optBoolean("trial") && s.optBoolean("trial_started")) { s.put("trial_started", false); writeState(s) }
+    }
+
+    private fun clearForApkUpgrade(appliedUnder: Long) {
+        val s = state()
+        val from = s.optLong("active", 0)
+        deleteTree(active); deleteTree(prev); deleteTree(staged)
+        s.put("active", 0).put("prev", 0).put("trial", false).put("trial_started", false).put("app_code_at_apply", 0)
+        writeState(s)
+        ledger("apk_installed", JSONObject().put("from", ver(from)).put("to", ver(0))
+            .put("delivery", "apk").put("reason", "apk upgrade $appliedUnder → $appVersionCode: bundle 0 wins"))
+    }
+
+    fun rollback(reason: String): Unit = synchronized(lock) {
         val s = state()
         val from = s.optLong("active", 0)
         val bad = File(root, "rejected")

@@ -17,9 +17,12 @@
 set -eu
 
 log() { echo "[omarchy] $*"; }
+# LINUXDESK_STAGE lines drive the app's full-screen setup progress bar (OmarchyProgress.kt).
+stage() { echo "LINUXDESK_STAGE $1/7 $2"; }
 log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m)"
 
 # 1. pacman under proot -----------------------------------------------------------------------------------------
+stage 1 "Configuring pacman for PRoot"
 #  - DisableSandbox: pacman 7 sandboxes its downloader with Landlock + seccomp and a dropped-privilege user
 #    (DownloadUser = alpm). Under proot's fake root setuid to alpm does not stick and Landlock may be missing,
 #    so downloads fail. Both are turned off (the same fix Local Desktop and proot-distro use).
@@ -45,6 +48,7 @@ Server = http://mirror.archlinuxarm.org/$arch/$repo
 EOF
 
 # 2. keyring ---------------------------------------------------------------------------------------------------
+stage 2 "Initialising the pacman keyring"
 # pacman-key needs gpg-agent; under proot that works with a plain homedir. Retry once with a fresh keyring.
 if [ ! -s /etc/pacman.d/gnupg/pubring.gpg ] && [ ! -s /etc/pacman.d/gnupg/pubring.kbx ]; then
   log "pacman-key --init (generates a local key; can take a minute under proot)"
@@ -54,8 +58,11 @@ pacman-key --populate archlinuxarm >/dev/null 2>&1 || log "note: populate archli
 gpgconf --kill gpg-agent 2>/dev/null || true
 
 # 3. base sync + upgrade ----------------------------------------------------------------------------------------
+stage 3 "Updating Arch Linux ARM (full upgrade)"
 attempt=1
-until pacman -Sy --noconfirm; do
+# -Syy, not -Sy: force a fresh package list. Tami's phone (2026-11-19 21:12) kept a stale one and every mirror
+# answered 404 for chromium 151 / gtk3 3.24.52-1 / mesa / llvm-libs, which had already been replaced by newer builds.
+until pacman -Syy --noconfirm; do
   if [ "$attempt" -ge 3 ]; then log "pacman -Sy failed 3 times (no network?)"; exit 2; fi
   attempt=$((attempt + 1)); log "retrying pacman -Sy in 5s"; sleep 5
 done
@@ -63,9 +70,11 @@ done
 # initramfs. Then a full upgrade: Arch does not support partial upgrades.
 pacman -Rdd --noconfirm linux-aarch64 $(pacman -Qq | grep '^linux-firmware') mkinitcpio mkinitcpio-busybox 2>/dev/null \
   || log "note: kernel/firmware packages were not removed (already gone?)"
-pacman -Su --noconfirm || log "pacman -Su reported errors (often harmless hook failures under PRoot); verifying later"
+pacman -Su --noconfirm || { log "pacman -Su failed; refreshing the package list and retrying once"; pacman -Syy --noconfirm; pacman -Su --noconfirm; } \
+  || log "pacman -Su reported errors (often harmless hook failures under PRoot); verifying later"
 
 # 4. Omarchy repo ----------------------------------------------------------------------------------------------
+stage 4 "Adding the Omarchy repository"
 # Trust bootstrap without a keyserver: fetch omarchy-keyring (6.9 KB) by its PINNED sha256 (from omarchy.db,
 # checked 2026-11-19), install it as a local file (its scriptlet runs `pacman-key --populate omarchy`), and check the
 # expected fingerprint. From then on the [omarchy] repo uses pacman's default SigLevel (signed packages required).
@@ -84,9 +93,10 @@ gpgconf --kill gpg-agent 2>/dev/null || true
 if ! grep -q '^\[omarchy\]' "$CONF"; then
   printf '\n[omarchy]\nServer = https://pkgs.omarchy.org/stable/$arch\n' >> "$CONF"
 fi
-pacman -Sy --noconfirm
+pacman -Syy --noconfirm
 
 # 5. desktop packages ------------------------------------------------------------------------------------------
+stage 5 "Installing Chrome, i3, fonts and tools"
 # xkeyboard-config     lorie compiles its keymap from <rootfs>/usr/share/X11/xkb (a symlink to xkeyboard-config-2)
 # xorg-fonts-misc      X core fonts ("fixed", "cursor"); linked into usr/share/fonts/X11 below for lorie
 # xdotool xwininfo...  fit-window.sh / deskd input + window geometry
@@ -100,7 +110,7 @@ pacman -Sy --noconfirm
 PKGS="xkeyboard-config xorg-fonts-misc xorg-fonts-alias-misc xorg-mkfontscale xdotool xorg-xwininfo xorg-xprop"
 PKGS="$PKGS xorg-xsetroot xorg-xrandr i3-wm i3status rofi dunst feh alacritty btop"
 PKGS="$PKGS noto-fonts noto-fonts-emoji ttf-dejavu ttf-liberation ttf-jetbrains-mono-nerd-basic fontconfig python pulseaudio libpulse"
-pacman -S --needed --noconfirm $PKGS || log "pacman reported errors (often harmless hook failures under PRoot); verifying ..."
+pacman -S --needed --noconfirm $PKGS || { pacman -Syy --noconfirm; pacman -S --needed --noconfirm $PKGS; } || log "pacman reported errors (often harmless hook failures under PRoot); verifying ..."
 
 # Browser: Omarchy's default, Google Chrome 158 (glibc; deps gtk3 nss alsa-lib ..., no systemd). Fallback: ALARM
 # chromium 157.
@@ -108,12 +118,13 @@ if ! command -v google-chrome-stable >/dev/null 2>&1; then
   pacman -S --needed --noconfirm google-chrome || log "google-chrome failed; trying chromium"
 fi
 if ! command -v google-chrome-stable >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
-  pacman -S --needed --noconfirm chromium || true
+  pacman -S --needed --noconfirm chromium || { log "chromium failed; refreshing the package list and retrying once"; pacman -Syy --noconfirm; pacman -S --needed --noconfirm chromium; } || true
 fi
 # omarchy-nvim is nice to have (Omarchy's neovim setup); never fatal.
 pacman -S --needed --noconfirm omarchy-nvim >/dev/null 2>&1 || log "note: omarchy-nvim not installed"
 
 # 6. Omarchy themes, without the meta package's deps --------------------------------------------------------------
+stage 6 "Installing the Omarchy themes"
 # -Sw downloads omarchy-*.pkg.tar.zst (82 MB, signature-checked by pacman) without installing its dependency tree;
 # bsdtar then extracts only usr/share/omarchy/themes.
 if [ ! -f /usr/share/omarchy/themes/tokyo-night/colors.toml ]; then
@@ -142,6 +153,7 @@ done
 fc-cache -f >/dev/null 2>&1 || true
 
 # 8. the Omarchy look for i3 / alacritty / Chrome (rendered from the theme's colors.toml) -------------------------
+stage 7 "Applying the Omarchy look"
 python3 /opt/linuxdesk/omarchy/omarchy-theme.py "${LINUXDESK_OMARCHY_THEME:-tokyo-night}" || log "note: theme render failed; i3 uses its defaults"
 
 # Keep the image lean.

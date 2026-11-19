@@ -35,6 +35,7 @@ ARCH_SHA="62c58f5ba71aa8a010adc750870c3ff555f2d58cf7d39723e340a6f5a8d83da9"
 MARKER=/etc/linuxdesk/gpu-v1
 WORK=/var/cache/linuxdesk-gpu
 BACKUP=/var/lib/linuxdesk/gpu-backup.tar
+ADDED=/var/lib/linuxdesk/gpu-added.txt   # files the tarball ADDS (not in stock mesa); --restore deletes them
 
 say() { echo "[gpu-setup] $*"; }
 
@@ -48,10 +49,12 @@ if [ "$ARCHM" != "aarch64" ]; then say "this build is aarch64 only (got $ARCHM);
 
 if [ "$RESTORE" = 1 ]; then
   if [ "$FLAVOR" = alpine ]; then
+    if [ -f "$ADDED" ]; then while read -r f; do [ -n "$f" ] && rm -f "/$f"; done < "$ADDED"; say "removed $(wc -l < "$ADDED") added files"; fi
     if [ -f "$BACKUP" ]; then tar -xf "$BACKUP" -C / && say "restored stock mesa files from $BACKUP"; fi
     apk fix --no-progress mesa mesa-gl mesa-egl mesa-gbm mesa-dri-gallium 2>/dev/null || true
   else
-    pacman -S --noconfirm --needed mesa vulkan-freedreno 2>&1 | tail -3 || true
+    # No --needed: the lfdevs build is NEWER than ALARM's, and -S then reinstalls (downgrades to) the repo version.
+    pacman -S --noconfirm mesa vulkan-freedreno || say "pacman could not reinstall stock mesa (restore by hand)"
   fi
   rm -f "$MARKER"; say "restored; GPU mesa removed"; exit 0
 fi
@@ -85,13 +88,16 @@ if [ "$FLAVOR" = alpine ]; then
   #   libxxf86vm, wayland-libs-client, libudev-zero, vulkan-loader. mesa-utils (glxinfo) + vulkan-tools (vulkaninfo)
   #   are for the session self-check. Stock mesa packages stay installed (chromium depends on mesa-dri-gallium);
   #   we overwrite their files below.
-  PKGS="mesa mesa-gl mesa-egl mesa-gbm mesa-gles mesa-dri-gallium llvm22-libs spirv-tools libdisplay-info libxshmfence libxxf86vm wayland-libs-client libudev-zero vulkan-loader mesa-utils vulkan-tools"
+  PKGS="curl mesa mesa-gl mesa-egl mesa-gbm mesa-gles mesa-dri-gallium llvm22-libs spirv-tools libdisplay-info libxshmfence libxxf86vm wayland-libs-client libudev-zero vulkan-loader mesa-utils vulkan-tools"
   apk add --no-progress $PKGS || say "apk reported errors (often harmless trigger failures under PRoot); verifying ..."
   fetch "$BASE/$ALPINE_TGZ" "$WORK/$ALPINE_TGZ" "$ALPINE_SHA" || exit $?
   # Back up every stock file the tarball will replace (first install only), so --restore can undo it.
   if [ ! -f "$BACKUP" ]; then
-    tar -tzf "$WORK/$ALPINE_TGZ" | sed 's#^\./##' | grep -v '/$' | while read -r f; do [ -e "/$f" ] && echo "$f"; done > "$WORK/replaced.txt" || true
-    if [ -s "$WORK/replaced.txt" ]; then (cd / && tar -cf "$BACKUP" -T "$WORK/replaced.txt") && say "backed up $(wc -l < "$WORK/replaced.txt") stock files"; fi
+    : > "$WORK/replaced.txt"; : > "$ADDED"
+    tar -tzf "$WORK/$ALPINE_TGZ" | sed 's#^\./##' | grep -v -e '/$' -e '^$' | while read -r f; do
+      if [ -e "/$f" ] || [ -L "/$f" ]; then echo "$f" >> "$WORK/replaced.txt"; else echo "$f" >> "$ADDED"; fi
+    done
+    if [ -s "$WORK/replaced.txt" ]; then (cd / && tar -cf "$BACKUP" -T "$WORK/replaced.txt") && say "backed up $(wc -l < "$WORK/replaced.txt") stock files; $(wc -l < "$ADDED") new"; fi
   fi
   tar -xzf "$WORK/$ALPINE_TGZ" -C / || { say "extract failed"; exit 5; }
 else
@@ -100,11 +106,12 @@ else
   # files (sha256 above) rather than a repo.
   fetch "$BASE/$ARCH_TAR" "$WORK/$ARCH_TAR" "$ARCH_SHA" || exit $?
   rm -rf "$WORK/arch" && mkdir -p "$WORK/arch" && tar -xf "$WORK/$ARCH_TAR" -C "$WORK/arch"
-  pacman -S --noconfirm --needed mesa-utils vulkan-tools vulkan-icd-loader 2>&1 | tail -5 || say "pacman: self-check tools not installed (continuing)"
+  pacman -S --noconfirm --needed mesa-utils vulkan-tools vulkan-icd-loader || say "pacman: self-check tools not installed (continuing)"
   # mesa-docs and vulkan-mesa-layers are optional; install the three that matter (+ layers that freedreno depends on).
   set -- "$WORK"/arch/mesa-1*.pkg.tar.xz "$WORK"/arch/vulkan-freedreno-*.pkg.tar.xz "$WORK"/arch/vulkan-mesa-implicit-layers-*.pkg.tar.xz
   # DisableSandbox: pacman's Landlock sandbox fails under proot (setup-omarchy.sh does the same in pacman.conf).
-  pacman -U --noconfirm --needed --overwrite '*' "$@" 2>&1 | tail -20 || { say "pacman -U failed"; exit 5; }
+  # No pipe here: `pacman … | tail` would hide pacman's exit status.
+  pacman -U --noconfirm --needed --overwrite '*' "$@" || { say "pacman -U failed"; exit 5; }
 fi
 
 # Post-checks: the files that make kgsl/Turnip work must be present.

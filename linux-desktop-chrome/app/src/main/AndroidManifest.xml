@@ -93,6 +93,13 @@
             android:exported="false"
             android:label="@string/ld_genie_title" />
 
+        <!-- Omarchy lane: full-screen first-run setup + boot progress (OmarchySetupActivity). Not exported. -->
+        <activity
+            android:name=".OmarchySetupActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+
         <!-- Hardware lane: read-only detection screen (K/hw/HwActivity). No permission, not exported. -->
         <activity
             android:name=".hw.HwActivity"

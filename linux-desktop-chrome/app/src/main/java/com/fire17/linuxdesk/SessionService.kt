@@ -26,6 +26,7 @@ import com.fire17.linuxdesk.genie.GenieRuntime
 import com.fire17.linuxdesk.genie.GenieSettings
 import com.fire17.linuxdesk.gpu.GpuSession
 import com.fire17.linuxdesk.linux.Distro
+import com.fire17.linuxdesk.linux.OmarchyRun
 import com.fire17.linuxdesk.linux.ProotRuntime
 import com.fire17.linuxdesk.linux.RootfsInstaller
 import com.fire17.linuxdesk.x11.X11ServerService
@@ -149,11 +150,15 @@ class SessionService : Service() {
             val distro = Distro.current(this)
             sessionDistro = distro
             val installer = RootfsInstaller(this, distro)
+            // Omarchy: every session line also feeds the full-screen setup screen's progress bar (OmarchySetupActivity).
+            val omarchy = if (distro == Distro.OMARCHY) OmarchyRun.progress else null
+            val logLine: (String) -> Unit = { line -> SessionBus.log(line); omarchy?.onLine(line) }
 
             SessionBus.setState(State.INSTALLING_ROOTFS,
                 if (distro == Distro.ALPINE) getString(R.string.ld_state_rootfs) else "Preparing Omarchy (Arch Linux ARM) …")
             var lastPct = -2
-            SessionBus.log(installer.ensureInstalled({ SessionBus.log(it) }) { pct ->
+            SessionBus.log(installer.ensureInstalled(logLine) { pct ->
+                if (pct in 0..100) omarchy?.onDownload(pct)
                 // First Omarchy run: the 829 MB download drives the state line (= the launcher's progress bar).
                 if (pct != lastPct) {
                     lastPct = pct
@@ -162,6 +167,8 @@ class SessionService : Service() {
                 }
             })
             SessionBus.downloadPercent = -1
+            // OTA v1: APK-upgrade clear / dead-trial rollback now (before installHelpers overlays ota/active), then judge the trial in the background.
+            com.fire17.linuxdesk.ota.OtaHealth.start(com.fire17.linuxdesk.ota.BundleStore(filesDir, BuildConfig.VERSION_CODE.toLong(), BuildConfig.VERSION_NAME), { SessionBus.browserWindowUp && SessionBus.snapshot.state == State.RUNNING }, { SessionBus.snapshot.state in setOf(State.BROWSER_EXITED, State.ERROR) }, { GenieRuntime.deskdReady() || !GenieSettings.genieAccess(this) }, { stopping })
 
             focusBridge?.stop()
             focusBridge = if (settings.autoKeyboard) FocusBridge().start() else null
@@ -185,7 +192,7 @@ class SessionService : Service() {
                 SessionBus.setState(State.INSTALLING_PACKAGES,
                     if (distro == Distro.ALPINE) getString(R.string.ld_state_packages)
                     else "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.75 GB download, ~2.4 GB on disk). This takes a while …")
-                val r = proot.runOnce(distro.setupScript, timeoutSec = 3600) { SessionBus.log(it) }
+                val r = proot.runOnce(distro.setupScript, timeoutSec = 3600, onLine = logLine)
                 if (r.exitCode != 0 || !installer.packagesInstalled()) {
                     SessionBus.setState(State.ERROR, "Package setup failed (exit=${r.exitCode}). Check network, then Start again.\n${r.tail.takeLast(600)}")
                     return
@@ -287,6 +294,7 @@ class SessionService : Service() {
             try {
                 p.inputStream.bufferedReader().forEachLine { line ->
                     SessionBus.log(line)
+                    if (proot.distro == Distro.OMARCHY) OmarchyRun.progress.onLine(line)   // boot stage of the setup screen
                     if (line.startsWith("LINUXDESK_WINDOW_UP") && !SessionBus.browserWindowUp) {
                         SessionBus.browserWindowUp = true
                         SessionBus.setState(State.RUNNING, getString(R.string.ld_state_running))

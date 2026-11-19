@@ -159,6 +159,12 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             autoOpened = false
             ensureNotificationPermission()
             SessionService.start(this, SessionService.ACTION_START)
+            // Omarchy: the install and the boot are shown full screen (Tami AC21A217), not as a launcher spinner.
+            if (Distro.current(this) == Distro.OMARCHY) {
+                com.fire17.linuxdesk.linux.OmarchyRun.reset()
+                autoOpened = true   // OmarchySetupActivity opens the desktop itself when X comes up
+                startActivity(Intent(this, OmarchySetupActivity::class.java))
+            }
         }
         openBtn.setOnClickListener { openDesktop() }
         stopBtn.setOnClickListener { SessionService.start(this, SessionService.ACTION_STOP) }
