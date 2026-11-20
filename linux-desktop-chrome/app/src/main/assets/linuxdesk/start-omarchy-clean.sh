@@ -99,6 +99,20 @@ fi
 try_hyprland() {
   [ -x "$HS/hyprland/bin/Hyprland" ] || { say "clean: no patched Hyprland stack (run: setup-omarchy-clean.sh hypr-stack); using sway"; return 1; }
   command -v weston >/dev/null 2>&1 || { say "clean: weston missing; using sway"; return 1; }
+  # A library missing from the bundle's link set kills Hyprland at load (Tami 11:38: libxcb-errors.so.0 -> sway).
+  # Install the ALARM package that owns it, then re-check; still missing -> say which, and use sway.
+  hl=$HS/aquamarine/lib:$HS/compat/lib
+  ml=$(LD_LIBRARY_PATH=$hl ldd "$HS/hyprland/bin/Hyprland" 2>/dev/null | awk '/not found/ {print $1}')
+  if [ -n "$ml" ]; then
+    say "clean: Hyprland is missing $(echo $ml); installing the packages that provide them"
+    for l in $ml; do
+      p=$(pacman -Fq "$l" 2>/dev/null | head -n 1); p=${p##*/}
+      [ -n "$p" ] || case "$l" in libxcb-errors.so*) p=xcb-util-errors ;; esac
+      [ -n "$p" ] && { pacman -S --noconfirm --needed "$p" >/dev/null 2>&1 && say "clean: installed $p (for $l)" || say "clean: could not install $p (for $l)"; }
+    done
+    ml=$(LD_LIBRARY_PATH=$hl ldd "$HS/hyprland/bin/Hyprland" 2>/dev/null | awk '/not found/ {print $1}')
+    [ -z "$ml" ] || { say "clean: Hyprland still misses $(echo $ml); using sway"; return 1; }
+  fi
   # Memory: Weston + Hyprland + the shell + Chrome need headroom (Tami's rule: MemAvailable >= 2.5 GB).
   avail=$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo 2>/dev/null)
   if [ -n "$avail" ] && [ "$avail" -lt 2621440 ]; then say "clean: MemAvailable $((avail / 1024)) MB < 2560 MB; using sway (lighter)"; return 1; fi

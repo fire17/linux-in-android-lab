@@ -156,7 +156,9 @@ hypr_stack() {
   rm -rf "$T" "$B"
   # The rest of its link set (lua5.5, muparser, re2, tomlplusplus, libzip, hyprwire, pugixml) is in ALARM; installed
   # normally. ldd decides; any "not found" is logged, not fatal (start-omarchy-clean.sh then falls back to sway).
-  pac lua muparser re2 tomlplusplus libzip hyprwire pugixml hyprutils hyprlang hyprcursor >/dev/null 2>&1 || true
+  # xcb-util-errors = libxcb-errors.so.0: missing on Tami's phone 11:38, Hyprland died at load and both Omarchy (clean)
+  # and Omarchy Mobile fell back (sway / Chrome alone).
+  pac lua muparser re2 tomlplusplus libzip hyprwire pugixml hyprutils hyprlang hyprcursor xcb-util-errors >/dev/null 2>&1 || true
   nf=$(LD_LIBRARY_PATH=$HS_DIR/aquamarine/lib:$HS_DIR/compat/lib ldd "$HS_DIR/hyprland/bin/Hyprland" 2>/dev/null | grep -c 'not found' || true)
   [ "${nf:-0}" = 0 ] || log "hypr-stack: note: $nf libraries not found by ldd (the session falls back to sway)"
   echo "omarchy-android v0.1.1 sha256 $HS_SHA ldd_not_found=${nf:-0}" > "$HS_MARK"

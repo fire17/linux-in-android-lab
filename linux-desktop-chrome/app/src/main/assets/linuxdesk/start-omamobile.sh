@@ -73,6 +73,20 @@ say "memory gate OK (MemAvailable $((ma / 1024)) MB, SwapFree $((sf / 1024)) MB)
 # ---- 2. what must exist ----------------------------------------------------------------------------------------------
 [ -x "$HB/Hyprland" ] || fallback "no patched Hyprland at $HB/Hyprland" "$@"
 [ -x "$HB/hyprctl" ] || fallback "no hyprctl at $HB/hyprctl" "$@"
+# A library missing from the bundle's link set kills Hyprland at load and lands Tami on the fallback (11:38:
+# libxcb-errors.so.0). Repair it here instead of failing silently: install the ALARM package that owns it, then re-check.
+missing_libs() { LD_LIBRARY_PATH=$LDP ldd "$HB/Hyprland" 2>/dev/null | awk '/not found/ {print $1}'; }
+ml=$(missing_libs)
+if [ -n "$ml" ]; then
+  say "Hyprland is missing: $(echo $ml); installing the packages that provide them"
+  for l in $ml; do
+    p=$(pacman -Fq "$l" 2>/dev/null | head -n 1); p=${p##*/}
+    [ -n "$p" ] || case "$l" in libxcb-errors.so*) p=xcb-util-errors ;; esac
+    [ -n "$p" ] && { pacman -S --noconfirm --needed "$p" >/dev/null 2>&1 && say "installed $p (for $l)" || say "could not install $p (for $l)"; }
+  done
+  ml=$(missing_libs)
+  [ -z "$ml" ] || fallback "Hyprland still misses $(echo $ml)" "$@"
+fi
 for c in weston dbus-run-session quickshell; do command -v "$c" >/dev/null 2>&1 || fallback "$c is not installed" "$@"; done
 HCFG=$UH/.config/hypr/hyprland.lua
 [ -f "$HCFG" ] || fallback "no Hyprland config $HCFG (setup-omamobile.sh stage 6?)" "$@"
