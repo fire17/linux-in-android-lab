@@ -38,7 +38,8 @@ _prebuilt_rekey() {
   [ -f /etc/linuxdesk/prebuilt-rekey ] || return 0
   command -v pacman-key >/dev/null 2>&1 || return 0
   echo "[pacman-tune] prebuilt rootfs: creating this phone's own pacman keyring key"
-  rm -rf /etc/pacman.d/gnupg
+  # --init makes a master key only when none exists and keeps the public keyring (which still verifies packages
+  # meanwhile); --populate then re-signs the distro keys with it.
   pacman-key --init >/dev/null 2>&1 || return 0
   pacman-key --populate archlinuxarm >/dev/null 2>&1 || true
   [ -f /usr/share/pacman/keyrings/omarchy.gpg ] && { pacman-key --populate omarchy >/dev/null 2>&1 || true; }

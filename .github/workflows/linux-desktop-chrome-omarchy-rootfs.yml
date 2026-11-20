@@ -66,10 +66,10 @@ jobs:
           set -e
           sudo mkdir -p "$R"
           sudo tar -xpzf "$RUNNER_TEMP/$ALARM_FILE" -C "$R" --numeric-owner
-          sudo rm -rf "$R"/boot/* "$R"/usr/lib/firmware/* "$R"/usr/lib/modules/*
-          rm -f "$RUNNER_TEMP/$ALARM_FILE"
+          sudo rm -rf "${R:?}"/boot/* "${R:?}"/usr/lib/firmware/* "${R:?}"/usr/lib/modules/*
+          rm -f "${RUNNER_TEMP:?}/${ALARM_FILE:?}"
           # The app's writeGuestConfig does the same on the phone.
-          sudo rm -f "$R/etc/resolv.conf"
+          sudo rm -f "${R:?}/etc/resolv.conf"
           sudo cp /etc/resolv.conf "$R/etc/resolv.conf"
           # Helpers exactly as the app installs them (RootfsInstaller.installHelpers).
           sudo mkdir -p "$R/opt/linuxdesk" "$R/etc/linuxdesk" "$R/root" "$R/tmp/.X11-unix"
@@ -113,13 +113,13 @@ jobs:
           sleep 1
           for m in dev proc sys; do sudo umount -R "$R/$m" 2>/dev/null || sudo umount -lR "$R/$m" 2>/dev/null || true; done
           if mount | grep -F " $R/"; then echo "::error::still mounted under $R"; exit 1; fi
-          sudo rm -rf "$R"/var/cache/pacman/pkg/* "$R"/var/lib/pacman/sync/* "$R"/var/cache/linuxdesk \
-                      "$R"/var/log/* "$R"/tmp/* "$R"/var/tmp/* "$R"/root/.cache "$R"/home/*/.cache \
-                      "$R"/usr/share/doc/* "$R"/usr/share/man/* "$R"/usr/share/gtk-doc/*
+          sudo rm -rf "${R:?}"/var/cache/pacman/pkg/* "${R:?}"/var/lib/pacman/sync/* "${R:?}"/var/cache/linuxdesk \
+                      "${R:?}"/var/log/* "${R:?}"/tmp/* "${R:?}"/var/tmp/* "${R:?}"/root/.cache "${R:?}"/home/*/.cache \
+                      "${R:?}"/usr/share/doc/* "${R:?}"/usr/share/man/* "${R:?}"/usr/share/gtk-doc/*
           # Never publish the keyring's local master secret key (it lsigns the distro keys).
-          sudo rm -rf "$R"/etc/pacman.d/gnupg/private-keys-v1.d "$R"/etc/pacman.d/gnupg/secring.gpg \
-                      "$R"/etc/pacman.d/gnupg/S.* "$R"/etc/pacman.d/gnupg/*.lock "$R"/etc/pacman.d/gnupg/.#*
-          sudo rm -f "$R"/etc/ssh/ssh_host_* "$R/etc/resolv.conf"   # machine-id stays: dbus needs one and nothing on the phone makes it
+          sudo rm -rf "${R:?}"/etc/pacman.d/gnupg/private-keys-v1.d "${R:?}"/etc/pacman.d/gnupg/secring.gpg \
+                      "${R:?}"/etc/pacman.d/gnupg/S.* "${R:?}"/etc/pacman.d/gnupg/*.lock "${R:?}"/etc/pacman.d/gnupg/.#*
+          sudo rm -f "${R:?}"/etc/ssh/ssh_host_* "${R:?}/etc/resolv.conf"   # machine-id stays: dbus needs one and nothing on the phone makes it
           echo 1 | sudo tee "$R/etc/linuxdesk/prebuilt-rekey"
           printf '%s %s %s\n' "$TAG" "$(date -u +%FT%TZ)" "$GITHUB_SHA" | sudo tee "$R/etc/linuxdesk/prebuilt"
           sudo du -sh "$R"

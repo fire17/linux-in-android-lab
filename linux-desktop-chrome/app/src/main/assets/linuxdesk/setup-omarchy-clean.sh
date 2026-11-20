@@ -69,13 +69,28 @@ mem_gate() {
   done
 }
 
+# A Start that was cut off (app closed, phone killed it) leaves /var/lib/pacman/db.lck behind, and every later sync
+# then fails "unable to lock database" (Tami 07:42, AC4D0DAB: misreported as "no network?"). No pacman running = the
+# lock is stale: remove it. A live pacman (another stage) is waited for, up to 2 minutes.
+PACMAN_LCK=/var/lib/pacman/db.lck
+clear_stale_lock() {
+  w=0
+  while [ -e "$PACMAN_LCK" ] && pgrep -x pacman >/dev/null 2>&1 && [ "$w" -lt 24 ]; do sleep 5; w=$((w + 1)); done
+  command -v pgrep >/dev/null 2>&1 || return 0   # no way to tell a live pacman: leave the lock alone
+  if [ -e "$PACMAN_LCK" ] && ! pgrep -x pacman >/dev/null 2>&1; then log "removing a stale pacman lock"; rm -f /var/lib/pacman/db.lck; fi
+  return 0
+}
 SYNCED=0
 sync_db() {
   [ "$SYNCED" = 1 ] && return 0
+  clear_stale_lock
   attempt=1
   until pacman -Syy --noconfirm; do
-    if [ "$attempt" -ge 3 ]; then log "pacman -Syy failed 3 times (no network?)"; exit 2; fi
-    attempt=$((attempt + 1)); log "retrying pacman -Syy in 5s"; sleep 5
+    if [ "$attempt" -ge 3 ]; then
+      if [ -e "$PACMAN_LCK" ]; then log "pacman -Syy failed 3 times: the pacman database is locked"; else log "pacman -Syy failed 3 times (no network?)"; fi
+      exit 2
+    fi
+    attempt=$((attempt + 1)); log "retrying pacman -Syy in 5s"; sleep 5; clear_stale_lock
   done
   SYNCED=1
 }
