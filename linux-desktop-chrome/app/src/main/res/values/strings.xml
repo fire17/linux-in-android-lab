@@ -34,6 +34,7 @@
     <string name="ld_opt_auto_kbd">Pop up the keyboard when a web text field is focused (experimental)</string>
     <string name="ld_opt_legacy">Legacy drawing (try this if the screen stays black)</string>
     <string name="ld_opt_noseccomp">Slow-safe PRoot mode (PROOT_NO_SECCOMP=1)</string>
+    <string name="ld_opt_stream_install">Fast Omarchy install: download and unpack in one pass (off = keep the archive, resumable)</string>
     <string name="ld_opt_gpu">Allow GPU in Chromium (usually no effect inside PRoot)</string>
     <string name="ld_opt_sound">Sound: play Linux audio on this phone (switches at once, no restart)</string>
     <string name="ld_opt_sound_smooth">Smoother sound: bigger buffer, fewer clicks, ~0.15 s more delay (recommendation, off)</string>

@@ -38,6 +38,12 @@ BACKUP=/var/lib/linuxdesk/gpu-backup.tar
 ADDED=/var/lib/linuxdesk/gpu-added.txt   # files the tarball ADDS (not in stock mesa); --restore deletes them
 
 say() { echo "[gpu-setup] $*"; }
+# A5/A8 pacman.conf helpers (pacman-tune.sh, shipped next to this script). A missing helper never fails setup.
+PT="$(dirname "$0")/pacman-tune.sh"; [ -f "$PT" ] || PT=/opt/linuxdesk/pacman-tune.sh
+if [ -f "$PT" ]; then . "$PT"; else pacman_tune() { :; }; ignore_pkgs() { :; }; unignore_pkgs() { :; }; fi
+# A8: the patched (kgsl/Turnip) mesa packages pacman must not replace on -Syu. Hyprland/Aquamarine need no pin: the
+# patched builds live in /opt/omarchy-android (setup-omarchy-clean.sh hypr-stack), which pacman does not own.
+GPU_PINNED="mesa vulkan-freedreno vulkan-mesa-implicit-layers"
 
 RESTORE=0
 if [ "${1:-}" = "--restore" ]; then RESTORE=1; shift; fi
@@ -54,6 +60,7 @@ if [ "$RESTORE" = 1 ]; then
     apk fix --no-progress mesa mesa-gl mesa-egl mesa-gbm mesa-dri-gallium 2>/dev/null || true
   else
     # No --needed: the lfdevs build is NEWER than ALARM's, and -S then reinstalls (downgrades to) the repo version.
+    unignore_pkgs /etc/pacman.conf $GPU_PINNED
     pacman -S --noconfirm mesa vulkan-freedreno || say "pacman could not reinstall stock mesa (restore by hand)"
   fi
   rm -f "$MARKER"; say "restored; GPU mesa removed"; exit 0
@@ -112,6 +119,9 @@ else
   # DisableSandbox: pacman's Landlock sandbox fails under proot (setup-omarchy.sh does the same in pacman.conf).
   # No pipe here: `pacman … | tail` would hide pacman's exit status.
   pacman -U --noconfirm --needed --overwrite '*' "$@" || { say "pacman -U failed"; exit 5; }
+  # A8: keep `pacman -Syu` from swapping them for ALARM's stock (no-kgsl) mesa once ALARM's version passes ours.
+  ignore_pkgs /etc/pacman.conf $GPU_PINNED
+  pacman_tune /etc/pacman.conf
 fi
 
 # Post-checks: the files that make kgsl/Turnip work must be present.

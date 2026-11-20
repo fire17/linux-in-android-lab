@@ -35,7 +35,7 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
     /** The version string the marker must hold. Arch is a rolling release: any completed install counts. */
     private fun wantedVersion(): String = when (distro) {
         Distro.ALPINE -> bundledVersion()
-        Distro.OMARCHY -> ArchRootfsDownloader.VERSION
+        Distro.OMARCHY, Distro.OMARCHY_CLEAN -> ArchRootfsDownloader.VERSION
     }
 
     fun isInstalled(): Boolean =
@@ -47,6 +47,8 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
      */
     fun ensureInstalled(onProgress: (String) -> Unit = {}, onPercent: (Int) -> Unit = {}): String {
         if (isInstalled()) return "rootfs already installed (${distro.id}, ${wantedVersion()})"
+        val stream = distro.isArch && com.fire17.linuxdesk.LinuxDeskSettings(context).streamInstall
+        checkFreeSpace(stream)
         val tmp = File(context.filesDir, "${distro.dirName}.partial")
         TarGzExtractor.deleteTreeNoFollow(tmp)
         tmp.mkdirs()
@@ -57,31 +59,49 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
                 onProgress("Extracting $asset …")
                 context.assets.open(asset).use { TarGzExtractor(tmp).extract(it, onProgress) }
             }
-            Distro.OMARCHY -> {
+            // OMARCHY_CLEAN extracts the same tarball into its OWN dir (rootfs-omarchy-clean): a fresh, untouched base.
+            Distro.OMARCHY, Distro.OMARCHY_CLEAN -> {
                 if (!Distro.omarchySupported()) error("Omarchy (Arch Linux ARM) needs an arm64-v8a device")
-                val tarball = ArchRootfsDownloader(context).ensureDownloaded(onProgress, onPercent)
-                onPercent(-1)
-                onProgress("Extracting ${tarball.name} (about 0.7 GB; kernel, firmware and modules are skipped) …")
-                val s = tarball.inputStream().use {
-                    TarGzExtractor(tmp, ArchRootfsDownloader.SKIP_PREFIXES).extract(it, onProgress)
+                if (stream) {
+                    // A2: one pass, nothing stored; the hash is checked at the end of the stream, before the swap below.
+                    ArchRootfsDownloader(context).streamInto(tmp, onProgress, onPercent).also { onPercent(-1) }
+                } else {
+                    val tarball = ArchRootfsDownloader(context).ensureDownloaded(onProgress, onPercent)
+                    onPercent(-1)
+                    onProgress("Extracting ${tarball.name} (about 0.7 GB; kernel, firmware and modules are skipped) …")
+                    val s = tarball.inputStream().use {
+                        TarGzExtractor(tmp, ArchRootfsDownloader.SKIP_PREFIXES).extract(it, onProgress)
+                    }
+                    // The extracted tree is the real copy now; free 0.8 GB. A reinstall downloads again.
+                    tarball.delete()
+                    s
                 }
-                // The extracted tree is the real copy now; free 0.8 GB. A reinstall downloads again.
-                tarball.delete()
-                s
             }
         }
         writeGuestConfig(tmp)
         File(tmp, ".linuxdesk-installed").writeText(wantedVersion() + "\n")
 
-        val old = File(context.filesDir, "${distro.dirName}.old")
-        TarGzExtractor.deleteTreeNoFollow(old)
-        if (rootfsDir.exists() && !rootfsDir.renameTo(old)) TarGzExtractor.deleteTreeNoFollow(rootfsDir)
-        if (!tmp.renameTo(rootfsDir)) error("rename ${tmp.path} -> ${rootfsDir.path} failed")
-        TarGzExtractor.deleteTreeNoFollow(old)
+        StreamInstall.swap(tmp, rootfsDir, File(context.filesDir, "${distro.dirName}.old"))
 
         val msg = "rootfs (${distro.id}) installed in ${System.currentTimeMillis() - t0} ms: $stats"
         Log.i(TAG, msg)
         return msg
+    }
+
+    /**
+     * A7: refuse to start when the install cannot fit (FreeSpace: Arch = max(archive x 3, 5 GB), Alpine = 0.5 GB), so
+     * the phone does not fail after a 10-minute download. File mode reuses a tarball already downloaded, so its bytes
+     * count as available.
+     */
+    private fun checkFreeSpace(stream: Boolean) {
+        val avail = try { android.os.StatFs(context.filesDir.path).availableBytes } catch (_: Exception) { return }
+        val (archive, what) = when (distro) {
+            Distro.ALPINE -> 0L to "the Alpine base"
+            else -> ArchRootfsDownloader.KNOWN_SIZE to "Arch Linux ARM (Omarchy)"
+        }
+        val reused = if (distro.isArch && !stream) File(context.filesDir, "downloads").listFiles()
+            ?.filter { it.name.startsWith(ArchRootfsDownloader.FILE) }?.sumOf { it.length() } ?: 0L else 0L
+        FreeSpace.check(avail + reused, archive, distro.isArch, what)?.let { throw java.io.IOException(it) }
     }
 
     private fun writeGuestConfig(root: File) {
@@ -116,12 +136,14 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
         copyAssetDir("linuxdesk", dest)
         com.fire17.linuxdesk.ota.BundleStore(context.filesDir, com.fire17.linuxdesk.BuildConfig.VERSION_CODE.toLong(), com.fire17.linuxdesk.BuildConfig.VERSION_NAME).overlayActive(dest) // OTA v1: signed ota/active over APK assets (no-op when none)
         for (n in listOf("start-browser.sh", "fit-window.sh", "setup-packages.sh",
-                "setup-omarchy.sh", "start-omarchy.sh", "start-sway.sh", "setup-genie-arch.sh")) {
+                "setup-omarchy.sh", "start-omarchy.sh", "start-sway.sh", "setup-genie-arch.sh",
+                "setup-omarchy-clean.sh", "start-omarchy-clean.sh")) {
             File(dest, n).takeIf { it.isFile }?.setExecutable(true, false)
         }
         if (focusBridgeConfigJs != null) File(dest, "focus-bridge/config.js").writeText(focusBridgeConfigJs)
         // Omarchy: setup-omarchy.sh / start scripts read the desktop choice (i3|sway) from /etc/linuxdesk/desktop.
-        if (distro == Distro.OMARCHY) {
+        // OMARCHY_CLEAN writes it too: its sway fallback is start-sway.sh, whose setup-omarchy.sh helpers read it.
+        if (distro.isArch) {
             File(rootfsDir, Desktop.GUEST_FILE).apply { parentFile?.mkdirs() }.writeText(Desktop.current(context).id + "\n")
         }
     }

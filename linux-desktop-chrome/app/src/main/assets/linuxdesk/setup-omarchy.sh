@@ -305,6 +305,11 @@ look_main() {
   fi
   return 0
 }
+# A5/A8 pacman.conf helpers (pacman-tune.sh, shipped next to this script). A missing helper never fails setup.
+PT="$(dirname "$0")/pacman-tune.sh"; [ -f "$PT" ] || PT=/opt/linuxdesk/pacman-tune.sh
+if [ -f "$PT" ]; then . "$PT"; else pacman_tune() { :; }; ignore_pkgs() { :; }; unignore_pkgs() { :; }; fi
+# A5: ParallelDownloads = 8, every run (idempotent), so rootfs that finished stage 1 earlier get it as well.
+pacman_tune /etc/pacman.conf
 if [ "${1:-}" = look ]; then look_main; exit 0; fi
 if [ "${1:-}" = apps ]; then apps_main; exit 0; fi
 if [ "${1:-}" = sway ]; then sway_main wait || exit 1; exit 0; fi

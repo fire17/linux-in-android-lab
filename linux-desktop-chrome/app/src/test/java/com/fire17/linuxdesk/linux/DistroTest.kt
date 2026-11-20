@@ -26,6 +26,20 @@ class DistroTest {
         assertTrue(o.genieScript.endsWith("setup-genie-arch.sh"))
     }
 
+    /** Omarchy (clean): a third, separate rootfs; it must never share a dir or a marker with the other two. */
+    @Test fun omarchyCleanHasItsOwnRootfsAndScripts() {
+        val c = Distro.OMARCHY_CLEAN
+        assertEquals("omarchy-clean", c.id)
+        assertEquals("rootfs-omarchy-clean", c.dirName)
+        assertEquals("etc/linuxdesk/omarchy-clean-v1", c.packagesMarker)
+        assertEquals("/opt/linuxdesk/setup-omarchy-clean.sh", c.setupScript)
+        assertEquals("/opt/linuxdesk/start-omarchy-clean.sh", c.startScript)
+        assertTrue(c.genieScript.endsWith("setup-genie-arch.sh"))
+        assertEquals(3, Distro.entries.map { it.dirName }.toSet().size)
+        assertEquals(3, Distro.entries.map { it.packagesMarker }.toSet().size)
+        assertTrue(c.isArch && Distro.OMARCHY.isArch && !Distro.ALPINE.isArch)
+    }
+
     @Test fun archDownloadPinsAreWellFormed() {
         assertTrue(ArchRootfsDownloader.KNOWN_SHA256.matches(Regex("[0-9a-f]{64}")))
         assertTrue(ArchRootfsDownloader.KNOWN_MD5.matches(Regex("[0-9a-f]{32}")))

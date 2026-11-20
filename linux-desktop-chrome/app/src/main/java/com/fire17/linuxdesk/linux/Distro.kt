@@ -12,6 +12,8 @@ import java.io.File
  *                                    Chromium, no window manager). The DEFAULT, and the only choice on x86_64.
  *   OMARCHY  filesDir/rootfs-arch   Arch Linux ARM aarch64, downloaded on first use (not in the APK), plus
  *                                    Omarchy's pacman repo: Google Chrome, Omarchy themes and fonts, i3 on lorie X11.
+ *   OMARCHY_CLEAN  filesDir/rootfs-omarchy-clean  (experimental) a fresh Arch Linux ARM with the real `omarchy`
+ *                                    package; Hyprland nested in Weston when the patched stack is present, else sway.
  *
  * The X server (lorie, ":x11" process) reads the selected rootfs dir from the bind intent, and every guest
  * process runs under proot -r <rootfsDir>. Paths that other lanes still hardcode as filesDir/rootfs (the genie
@@ -33,9 +35,19 @@ enum class Distro(
     ALPINE("alpine", "rootfs", "etc/linuxdesk/packages-v1",
         "/opt/linuxdesk/setup-packages.sh", "/opt/linuxdesk/start-browser.sh", "/opt/linuxdesk/setup-genie.sh"),
     OMARCHY("omarchy", "rootfs-arch", "etc/linuxdesk/omarchy-v1",
-        "/opt/linuxdesk/setup-omarchy.sh", "/opt/linuxdesk/start-omarchy.sh", "/opt/linuxdesk/setup-genie-arch.sh");
+        "/opt/linuxdesk/setup-omarchy.sh", "/opt/linuxdesk/start-omarchy.sh", "/opt/linuxdesk/setup-genie-arch.sh"),
+    /**
+     * Experimental third option (Tami 2026-11-20 02:17/02:19: "full Omarchy from the start", a "format C"): a FRESH
+     * Arch Linux ARM rootfs of its own that installs the REAL `omarchy` package and its dependency tree, plus PRoot
+     * shims for systemd/uwsm/sudo (notes/fresh/PLAN.md). Never touches rootfs or rootfs-arch.
+     */
+    OMARCHY_CLEAN("omarchy-clean", "rootfs-omarchy-clean", "etc/linuxdesk/omarchy-clean-v1",
+        "/opt/linuxdesk/setup-omarchy-clean.sh", "/opt/linuxdesk/start-omarchy-clean.sh", "/opt/linuxdesk/setup-genie-arch.sh");
 
     fun rootfsDir(ctx: Context): File = File(ctx.filesDir, dirName)
+
+    /** Both Omarchy flavours are Arch Linux ARM: same tarball, same pacman, same full-screen setup screen. */
+    val isArch: Boolean get() = this != ALPINE
 
     companion object {
         private const val PREFS = "linuxdesk_settings"
@@ -44,11 +56,11 @@ enum class Distro(
         /** Arch Linux ARM is aarch64 only, so Omarchy is offered on arm64-v8a devices only (never the x86_64 CI emulator). */
         fun omarchySupported(): Boolean = Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "x86_64" } == "arm64-v8a"
 
-        /** The selected distro. Anything unknown, or Omarchy on a non-arm64 device, falls back to ALPINE. */
+        /** The selected distro. Anything unknown, or an Arch distro on a non-arm64 device, falls back to ALPINE. */
         fun current(ctx: Context): Distro {
             val v = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
             val d = entries.firstOrNull { it.id == v } ?: ALPINE
-            return if (d == OMARCHY && !omarchySupported()) ALPINE else d
+            return if (d.isArch && !omarchySupported()) ALPINE else d
         }
 
         fun set(ctx: Context, d: Distro) {

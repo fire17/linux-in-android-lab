@@ -50,7 +50,8 @@ unit_file() {
   case "$u" in *@*.*) t="${u%%@*}@.${u##*.}"; for d in $dirs; do [ -f "$d/$t" ] && { echo "$d/$t"; return 0; }; done ;; esac
   return 1
 }
-key() { echo "$1" | tr '/@' '__'; }
+# One pidfile per unit, whatever spelling the caller used ("foo" and "foo.service" are the same unit).
+key() { k=$1; case "$k" in *.*) ;; *) k=$k.service ;; esac; echo "$k" | tr '/@' '__'; }
 alive() { p=$(cat "$SHIM_DIR/$(key "$1").pid" 2>/dev/null) && [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
 
 start_unit() {
@@ -64,8 +65,10 @@ start_unit() {
   # Environment= lines, then the command, detached from this shell. Output goes to the unit's own log.
   envs=$(sed -n 's/^Environment=//p' "$f" | tr '\n' ' ')
   log="$SHIM_DIR/$(key "$u").log"
+  # setsid (util-linux, in the Arch base) detaches the unit from the caller's session; plain sh when it is missing.
+  SS=""; command -v setsid >/dev/null 2>&1 && SS=setsid
   # shellcheck disable=SC2086  # the unit's command line is word-split on purpose (as systemd does)
-  (eval "export $envs" 2>/dev/null; exec setsid sh -c "exec $cmd" >>"$log" 2>&1 </dev/null) &
+  (eval "export $envs" 2>/dev/null; exec $SS sh -c "exec $cmd" >>"$log" 2>&1 </dev/null) &
   echo $! > "$SHIM_DIR/$(key "$u").pid"
   return 0
 }

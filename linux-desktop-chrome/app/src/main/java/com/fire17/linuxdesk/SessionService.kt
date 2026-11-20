@@ -153,11 +153,15 @@ class SessionService : Service() {
             sessionDistro = distro
             val installer = RootfsInstaller(this, distro)
             // Omarchy: every session line also feeds the full-screen setup screen's progress bar (OmarchySetupActivity).
-            val omarchy = if (distro == Distro.OMARCHY) OmarchyRun.progress else null
+            val omarchy = if (distro.isArch) OmarchyRun.progress else null
             val logLine: (String) -> Unit = { line -> SessionBus.log(line); omarchy?.onLine(line) }
 
             SessionBus.setState(State.INSTALLING_ROOTFS,
-                if (distro == Distro.ALPINE) getString(R.string.ld_state_rootfs) else "Preparing Omarchy (Arch Linux ARM) …")
+                when (distro) {
+                    Distro.ALPINE -> getString(R.string.ld_state_rootfs)
+                    Distro.OMARCHY_CLEAN -> "Preparing Omarchy (clean, experimental): a fresh Arch Linux ARM …"
+                    else -> "Preparing Omarchy (Arch Linux ARM) …"
+                })
             var lastPct = -2
             SessionBus.log(installer.ensureInstalled(logLine) { pct ->
                 if (pct in 0..100) omarchy?.onDownload(pct)
@@ -197,8 +201,11 @@ class SessionService : Service() {
 
             if (!installer.packagesInstalled()) {
                 SessionBus.setState(State.INSTALLING_PACKAGES,
-                    if (distro == Distro.ALPINE) getString(R.string.ld_state_packages)
-                    else "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.75 GB download, ~2.4 GB on disk). This takes a while …")
+                    when (distro) {
+                        Distro.ALPINE -> getString(R.string.ld_state_packages)
+                        Distro.OMARCHY_CLEAN -> "First run: pacman installs the real Omarchy, Chrome and Weston (~0.9 GB download, ~3.3 GB on disk). This takes a while …"
+                        else -> "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.75 GB download, ~2.4 GB on disk). This takes a while …"
+                    })
                 val r = proot.runOnce(distro.setupScript, timeoutSec = 3600, onLine = logLine)
                 if (r.exitCode != 0 || !installer.packagesInstalled()) {
                     SessionBus.setState(State.ERROR, "Package setup failed (exit=${r.exitCode}). Check network, then Start again.\n${r.tail.takeLast(600)}")
@@ -303,7 +310,7 @@ class SessionService : Service() {
             try {
                 p.inputStream.bufferedReader().forEachLine { line ->
                     SessionBus.log(line)
-                    if (proot.distro == Distro.OMARCHY) OmarchyRun.progress.onLine(line)   // boot stage of the setup screen
+                    if (proot.distro.isArch) OmarchyRun.progress.onLine(line)   // boot stage of the setup screen
                     if (line.startsWith("LINUXDESK_WINDOW_UP") && !SessionBus.browserWindowUp) {
                         SessionBus.browserWindowUp = true
                         SessionBus.setState(State.RUNNING, getString(R.string.ld_state_running))

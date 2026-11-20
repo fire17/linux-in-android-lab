@@ -33,6 +33,7 @@ class GpuModeTest {
     @Test fun setupArgvPerDistro() {
         assertEquals(listOf("/bin/sh", GpuMode.SETUP_SCRIPT, "alpine"), GpuMode.setupArgv("alpine"))
         assertEquals("arch", GpuMode.setupArgv("omarchy").last())
+        assertEquals("arch", GpuMode.setupArgv("omarchy-clean").last())   // Omarchy (clean) is Arch Linux ARM too
     }
 
     @Test fun parsesZinkTurnipFromGlxinfo() {

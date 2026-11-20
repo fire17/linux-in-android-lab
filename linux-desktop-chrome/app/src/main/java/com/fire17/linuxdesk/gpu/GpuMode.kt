@@ -69,8 +69,9 @@ object GpuMode {
         else -> Start.TRY_GPU
     }
 
-    /** Distro id as Distro.id ("alpine" / "omarchy") → the argument setup-gpu.sh takes. */
-    fun setupArgv(distroId: String): List<String> = listOf("/bin/sh", SETUP_SCRIPT, if (distroId == "omarchy") "arch" else "alpine")
+    /** Distro id as Distro.id ("alpine" / "omarchy" / "omarchy-clean") → the argument setup-gpu.sh takes. */
+    fun setupArgv(distroId: String): List<String> =
+        listOf("/bin/sh", SETUP_SCRIPT, if (distroId == "omarchy" || distroId == "omarchy-clean") "arch" else "alpine")
 
     // ------------------------------------------------------------------------------------ self-check parsing
 

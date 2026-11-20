@@ -32,6 +32,7 @@
     <string name="ld_opt_auto_kbd">המקלדת תקפוץ כשנוגעים בשדה טקסט בדף (ניסיוני)</string>
     <string name="ld_opt_legacy">ציור במצב ישן (legacy). כדאי לנסות אם המסך נשאר שחור</string>
     <string name="ld_opt_noseccomp">מצב PRoot איטי ובטוח (PROOT_NO_SECCOMP=1)</string>
+    <string name="ld_opt_stream_install">התקנת Omarchy מהירה: הורדה ופריסה במעבר אחד (כבוי = שומר את הקובץ, אפשר להמשיך הורדה)</string>
     <string name="ld_opt_gpu">לאפשר GPU ב-Chromium (בדרך כלל אין לזה השפעה בתוך PRoot)</string>
     <string name="ld_opt_sound">צליל: להשמיע את האודיו של לינוקס בטלפון (מתחלף מיד, בלי הפעלה מחדש)</string>
     <string name="ld_opt_sound_smooth">צליל חלק יותר: חוצץ גדול יותר, פחות תקתוקים, בערך 0.15 שניות יותר השהיה (המלצה, כבוי)</string>

@@ -26,7 +26,8 @@ import java.security.MessageDigest
  *    Linux ARM Build System", key 68B3537F39A313B3E574D06777193F152BDBE6A6. The app does NOT check GPG on the
  *    phone (no gpg on the host side); setup-omarchy.sh does verify every package pacman installs afterwards.
  *
- * The download resumes (HTTP Range) after an interrupted first run.
+ * File mode (setting streamInstall OFF): the download resumes (HTTP Range) after an interrupted first run.
+ * Stream mode (default, [streamInto]): one pass, nothing stored, not resumable.
  */
 class ArchRootfsDownloader(private val context: Context) {
 
@@ -83,6 +84,63 @@ class ArchRootfsDownloader(private val context: Context) {
             }
         }
         throw IOException("Arch Linux ARM download failed on every mirror (check network and free space: ~3 GB)", lastError)
+    }
+
+    /**
+     * A2 stream mode (setting streamInstall, default ON): download → gunzip → tar straight into [staging], hashing the
+     * raw bytes on the fly (StreamInstall). The tarball never touches the disk. Trust is the same as the file mode:
+     * the pinned sha256 (the 2026-11-19 GPG-verified build) passes; a newer mirror build passes only if its md5 equals
+     * the mirror's published .md5 (said plainly in the log). Any mismatch, truncation or IO error deletes [staging]
+     * and tries the next mirror; the installed rootfs is never touched. Not resumable: a broken stream starts over.
+     */
+    fun streamInto(staging: File, onProgress: (String) -> Unit, onPercent: (Int) -> Unit): TarGzExtractor.Stats {
+        // A tarball left by the file mode is useless here; free its 0.8 GB first.
+        File(dir, FILE).delete(); File(dir, "$FILE.part").delete()
+        var lastError: Exception? = null
+        for (base in MIRRORS) {
+            try {
+                val md5 = fetchText(base + FILE + ".md5").trim().split(Regex("\\s+")).first().lowercase()
+                if (!md5.matches(Regex("[0-9a-f]{32}"))) throw IOException("bad .md5 from $base: '$md5'")
+                if (md5 != KNOWN_MD5) onProgress("note: the mirror has a newer Arch Linux ARM build than the one verified on 2026-11-19 (md5 $md5)")
+                staging.mkdirs()
+                val c = open(base + FILE, 0)
+                try {
+                    if (c.responseCode != 200) throw IOException("HTTP ${c.responseCode} for ${base + FILE}")
+                    val total = c.contentLengthLong.takeIf { it > 0 } ?: if (md5 == KNOWN_MD5) KNOWN_SIZE else -1L
+                    onProgress("Downloading + unpacking Arch Linux ARM in one pass (${mb(total)} MB) from ${URL(base).host}")
+                    var lastPct = -1
+                    val (stats, d) = StreamInstall.run(c.inputStream, total, staging,
+                        extract = { TarGzExtractor(staging, SKIP_PREFIXES).extract(it, onProgress) },
+                        verify = { d ->
+                            when {
+                                d.sha256 == KNOWN_SHA256 -> null
+                                d.md5 != md5 -> "md5 mismatch from $base: got ${d.md5}, mirror says $md5"
+                                else -> null
+                            }
+                        },
+                        onBytes = { got, tot ->
+                            if (tot > 0) {
+                                val pct = (got * 100 / tot).toInt().coerceIn(0, 100)
+                                if (pct != lastPct) {
+                                    lastPct = pct
+                                    onPercent(pct)
+                                    if (pct % 5 == 0) onProgress("download $pct% (${mb(got)} / ${mb(tot)} MB)")
+                                }
+                            }
+                        })
+                    onProgress(if (d.sha256 == KNOWN_SHA256) "md5 OK, pinned sha256 OK (the 2026-11-19 GPG-verified build)"
+                        else "md5 OK; sha256 ${d.sha256} (a newer build than the pinned one; GPG not checked on the phone)")
+                    return stats
+                } finally { c.disconnect() }
+            } catch (e: Exception) {
+                Log.w(TAG, "mirror $base failed (stream)", e)
+                onProgress("mirror ${URL(base).host} failed: ${e.javaClass.simpleName}: ${e.message}")
+                TarGzExtractor.deleteTreeNoFollow(staging)
+                lastError = e
+            }
+        }
+        throw IOException("Arch Linux ARM download failed on every mirror (check the network; turn off the fast install " +
+            "in Settings to use the resumable download)", lastError)
     }
 
     private fun fetchText(url: String): String {

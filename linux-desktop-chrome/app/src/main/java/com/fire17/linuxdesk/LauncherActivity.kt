@@ -82,14 +82,23 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         distroGroup = findViewById(R.id.distro)
         // Alpine is the default and the only choice on x86_64 (Arch Linux ARM is aarch64 only).
         findViewById<View>(R.id.distro_omarchy).isEnabled = Distro.omarchySupported()
-        distroGroup.check(if (Distro.current(this) == Distro.OMARCHY) R.id.distro_omarchy else R.id.distro_alpine)
+        findViewById<View>(R.id.distro_omarchy_clean).isEnabled = Distro.omarchySupported()
+        distroGroup.check(when (Distro.current(this)) {
+            Distro.OMARCHY -> R.id.distro_omarchy
+            Distro.OMARCHY_CLEAN -> R.id.distro_omarchy_clean
+            Distro.ALPINE -> R.id.distro_alpine
+        })
         // Sway lane: Omarchy's desktop (i3 default, sway experimental); only meaningful while Omarchy is selected.
         swayBox = findViewById(R.id.desktop_sway)
         swayBox.isChecked = Desktop.current(this) == Desktop.SWAY
         swayBox.isEnabled = Distro.current(this) == Distro.OMARCHY
         swayBox.setOnCheckedChangeListener { _, on -> Desktop.set(this, if (on) Desktop.SWAY else Desktop.I3) }
         distroGroup.setOnCheckedChangeListener { _, id ->
-            Distro.set(this, if (id == R.id.distro_omarchy) Distro.OMARCHY else Distro.ALPINE)
+            Distro.set(this, when (id) {
+                R.id.distro_omarchy -> Distro.OMARCHY
+                R.id.distro_omarchy_clean -> Distro.OMARCHY_CLEAN   // experimental, its own rootfs (notes/fresh/PLAN.md)
+                else -> Distro.ALPINE
+            })
             swayBox.isEnabled = id == R.id.distro_omarchy
         }
 
@@ -133,6 +142,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         bindCheck(R.id.opt_auto_kbd, settings.autoKeyboard) { settings.autoKeyboard = it }
         bindCheck(R.id.opt_legacy, settings.legacyDrawing) { settings.legacyDrawing = it }
         bindCheck(R.id.opt_noseccomp, settings.prootNoSeccomp) { settings.prootNoSeccomp = it }
+        bindCheck(R.id.opt_stream_install, settings.streamInstall) { settings.streamInstall = it }
         bindCheck(R.id.opt_gpu, settings.useGpu) {
             settings.useGpu = it
             if (it) settings.gpuCrashed = false   // turning it ON again is an explicit "try the GPU"
@@ -188,7 +198,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             ensureNotificationPermission()
             // Omarchy: the install and the boot are shown full screen (Tami AC21A217), not as a launcher spinner.
             // Reset BEFORE start, so the new session's first lines are never wiped.
-            val omarchy = Distro.current(this) == Distro.OMARCHY
+            val omarchy = Distro.current(this).isArch   // both Omarchy flavours use the full-screen setup screen
             if (omarchy) com.fire17.linuxdesk.linux.OmarchyRun.reset()
             SessionService.start(this, SessionService.ACTION_START)
             if (omarchy) {
@@ -345,7 +355,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         val idle = s.state in setOf(State.IDLE, State.STOPPED, State.ERROR)
         for (i in 0 until distroGroup.childCount) {
             val c = distroGroup.getChildAt(i)
-            c.isEnabled = idle && (c.id != R.id.distro_omarchy || Distro.omarchySupported())
+            c.isEnabled = idle && ((c.id != R.id.distro_omarchy && c.id != R.id.distro_omarchy_clean) || Distro.omarchySupported())
         }
         swayBox.isEnabled = idle && Distro.current(this) == Distro.OMARCHY
         val pct = SessionBus.downloadPercent
@@ -367,7 +377,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         // Omarchy installing but its setup screen not shown yet (e.g. started from the notification or a resumed
         // launcher): open it once; it then opens the desktop itself when X comes up.
         val installing = s.state == State.INSTALLING_ROOTFS || s.state == State.INSTALLING_PACKAGES
-        if (installing && Distro.current(this) == Distro.OMARCHY && !com.fire17.linuxdesk.linux.OmarchyRun.setupShown) {
+        if (installing && Distro.current(this).isArch && !com.fire17.linuxdesk.linux.OmarchyRun.setupShown) {
             com.fire17.linuxdesk.linux.OmarchyRun.setupShown = true
             autoOpened = true
             startActivity(Intent(this, OmarchySetupActivity::class.java))

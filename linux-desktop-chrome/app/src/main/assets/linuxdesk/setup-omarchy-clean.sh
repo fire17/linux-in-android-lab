@@ -11,8 +11,7 @@
 #   1 pacman for PRoot        DisableSandbox, CheckSpace off, kernel/firmware/docs never extracted, HTTPS mirrors
 #   2 keyring                 pacman-key --init + archlinuxarm
 #   3 full upgrade            -Rdd the kernel/firmware packages, then -Syu (Arch has no partial upgrades)
-#   4 Omarchy repo FIRST      pinned omarchy-keyring, [omarchy] ABOVE [core]: Omarchy's hyprland 0.56 / aquamarine 0.15 /
-#                             quickshell win over ALARM's 0.57 / 0.16 (what Omarchy is built and tested against)
+#   4 Omarchy repo            pinned omarchy-keyring, [omarchy] after the ALARM repos (see the stage for why)
 #   5 the real Omarchy        pacman -S omarchy (+ the shims installed BEFORE it, so post-install scriptlets that call
 #                             systemctl/sudo see our shims instead of failing)
 #   6 the desktop around it   Chrome, walker, foot/alacritty, fonts, X keymaps for lorie, Weston (the Wayland host
@@ -21,6 +20,11 @@
 #                             a session bus config, the Qt 6.12 shell check (clean/qt612-shell.sh)
 #   8 checks + marker         hyprctl, Hyprland, quickshell, a browser, the X keymaps; writes omarchy-clean-v1
 # Resumable: each finished stage writes /etc/linuxdesk/clean-stage-N (= SETUP_REV); Retry skips those.
+#
+# Optional, separate: `setup-omarchy-clean.sh hypr-stack` fetches the PATCHED Hyprland + Aquamarine (SHM allocator,
+# no DRM needed) from the omarchy-android v0.1.1 bundle (pinned sha256, 1.18 GB) into /opt/omarchy-android. Stock
+# Hyprland cannot allocate buffers without a DRM device, so without this stack start-omarchy-clean.sh uses the
+# Sway fallback. Never run by the first-run setup (it is the heaviest job there is); see PLAN.md section 4.
 # Memory gate (Tami's phone rule: ONE heavy job, MemAvailable >= 2.5 GB, SwapFree >= 1.2 GB): checked before each
 # pacman stage; waits up to 20 min, then stops this run cleanly (exit 9) without losing finished stages.
 set -eu
@@ -89,8 +93,63 @@ need_pkgs() {  # need_pkgs <exit code> pkg...: fail the stage if any package is 
   [ -z "$missing" ] || { log "not installed:$missing"; exit "$code"; }
 }
 
-log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m); setup rev $SETUP_REV"
 CONF=/etc/pacman.conf
+
+# --- optional: the patched Hyprland stack (`setup-omarchy-clean.sh hypr-stack`) ----------------------------------------
+# Stock Hyprland (0.57.2 from ALARM) allocates every buffer through GBM on a DRM device; an app has no /dev/dri, so it
+# exits with "no allocator available" (notes/hyprland-research.md section 1). BlackFireAlex/omarchy-android (MIT) ships
+# Hyprland 0.56 + Aquamarine 0.14 patched with an SHM allocator; that build composited real windows on Tami's Fold6
+# inside LinuxDesk on 2026-11-19 (notes/progress/hypr-a2.log 23:33, notes/hypr-a2-foot.png).
+# This fetches ONLY that stack from the v0.1.1 bundle (sha256 pinned below, verified on the phone 2026-11-19) into
+# /opt/omarchy-android, never over /usr: opt/omarchy-android/{hyprland,aquamarine,mesa} plus the bundle-exact libhypr*
+# into /opt/omarchy-android/compat/lib. Heavy (1.18 GB download, ~1.4 GB free during the extract): memory-gated,
+# nice 19, single-thread xz, resumable download (curl -C -), and the bundle is deleted afterwards.
+HS_DIR=/opt/omarchy-android
+HS_MARK=$MARK/clean-hypr-stack-v1
+HS_URL=https://github.com/BlackFireAlex/omarchy-android/releases/download/v0.1.1/omarchy-android-aarch64-0.1.1.bundle.tar
+HS_SHA=7e9f1cd67533bc0d3988b5cb3831aef52f1527dd90391d9d868ed9345021cdb2
+HS_SIZE=1181941760
+hypr_stack() {
+  if [ -f "$HS_MARK" ] && [ -x "$HS_DIR/hyprland/bin/Hyprland" ]; then log "hypr-stack: already installed"; return 0; fi
+  mem_gate
+  dl=/var/cache/linuxdesk; mkdir -p "$dl" "$HS_DIR/compat/lib"
+  B=$dl/omarchy-android-aarch64-0.1.1.bundle.tar
+  if [ "$(stat -c %s "$B" 2>/dev/null || echo 0)" != "$HS_SIZE" ]; then
+    log "hypr-stack: downloading the omarchy-android v0.1.1 bundle (1.18 GB, resumable)"
+    curl -fL --retry 3 -C - -o "$B" "$HS_URL" || { log "hypr-stack: download failed (Retry resumes it)"; return 1; }
+  fi
+  echo "$HS_SHA  $B" | sha256sum -c - >/dev/null || { log "hypr-stack: bundle sha256 mismatch; deleting it"; rm -f "$B"; return 1; }
+  log "hypr-stack: bundle sha256 OK; extracting the Hyprland stack only (nice 19, single-thread xz)"
+  mem_gate
+  T=$dl/hs.tmp; rm -rf "$T"; mkdir -p "$T"
+  # The bundle is a plain tar holding rootfs.tar.xz (the full guest). Stream it; extract only what we need.
+  if ! tar -xOf "$B" --wildcards '*rootfs.tar.xz' | nice -n 19 xz -dc -T1 \
+      | tar -x -C "$T" --wildcards './opt/omarchy-android/hyprland/*' './opt/omarchy-android/aquamarine/*' \
+          './opt/omarchy-android/mesa/*' './usr/lib/libhypr*' 2>/dev/null; then
+    [ -x "$T/opt/omarchy-android/hyprland/bin/Hyprland" ] || { log "hypr-stack: extract failed"; rm -rf "$T"; return 1; }
+  fi
+  [ -x "$T/opt/omarchy-android/hyprland/bin/Hyprland" ] || { log "hypr-stack: Hyprland not in the bundle"; rm -rf "$T"; return 1; }
+  rm -rf "$HS_DIR/hyprland" "$HS_DIR/aquamarine" "$HS_DIR/mesa"
+  mv "$T/opt/omarchy-android/hyprland" "$T/opt/omarchy-android/aquamarine" "$HS_DIR/"
+  [ -d "$T/opt/omarchy-android/mesa" ] && mv "$T/opt/omarchy-android/mesa" "$HS_DIR/"
+  cp -a "$T"/usr/lib/libhypr* "$HS_DIR/compat/lib/" 2>/dev/null || true
+  rm -rf "$T" "$B"
+  # The rest of its link set (lua5.5, muparser, re2, tomlplusplus, libzip, hyprwire, pugixml) is in ALARM; installed
+  # normally. ldd decides; any "not found" is logged, not fatal (start-omarchy-clean.sh then falls back to sway).
+  pac lua muparser re2 tomlplusplus libzip hyprwire pugixml hyprutils hyprlang hyprcursor >/dev/null 2>&1 || true
+  nf=$(LD_LIBRARY_PATH=$HS_DIR/aquamarine/lib:$HS_DIR/compat/lib ldd "$HS_DIR/hyprland/bin/Hyprland" 2>/dev/null | grep -c 'not found' || true)
+  [ "${nf:-0}" = 0 ] || log "hypr-stack: note: $nf libraries not found by ldd (the session falls back to sway)"
+  echo "omarchy-android v0.1.1 sha256 $HS_SHA ldd_not_found=${nf:-0}" > "$HS_MARK"
+  log "hypr-stack: installed in $HS_DIR ($(du -sh "$HS_DIR" 2>/dev/null | cut -f1))"
+}
+# A5/A8 pacman.conf helpers (pacman-tune.sh, shipped next to this script). A missing helper never fails setup.
+PT="$(dirname "$0")/pacman-tune.sh"; [ -f "$PT" ] || PT=/opt/linuxdesk/pacman-tune.sh
+if [ -f "$PT" ]; then . "$PT"; else pacman_tune() { :; }; ignore_pkgs() { :; }; unignore_pkgs() { :; }; fi
+# A5: ParallelDownloads = 8, every run (idempotent), so rootfs that finished stage 1 earlier get it as well.
+pacman_tune "$CONF"
+if [ "${1:-}" = hypr-stack ]; then hypr_stack; exit $?; fi
+
+log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m); setup rev $SETUP_REV"
 
 # 1. pacman under PRoot ------------------------------------------------------------------------------------------
 stage 1 "Configuring pacman for PRoot"
@@ -154,14 +213,12 @@ if ! stage_done; then
     pacman-key --list-keys "$OMARCHY_FPR" >/dev/null 2>&1 || { log "Omarchy signing key $OMARCHY_FPR not in the keyring"; exit 6; }
   fi
   gpgconf --kill gpg-agent 2>/dev/null || true
-  # [omarchy] goes BEFORE [core]: pacman takes a package from the first repo that has it. That is how Omarchy itself
-  # is installed (its hyprland 0.56.2 + aquamarine 0.15.1 + quickshell 0.3.2.r7, not ALARM's hyprland 0.57.2), and it
-  # is the same Hyprland line as the patched 0.56 that composited on this phone (notes/hyprland, A2).
+  # [omarchy] goes AFTER the ALARM repos. Checked 2026-11-20 against the live dbs: Omarchy's own hyprland 0.56.2-7
+  # needs libhyprgraphics.so=4, which no aarch64 repo provides any more (ALARM moved to hyprgraphics 0.6 = .so.5), so
+  # "[omarchy] first" cannot resolve. ALARM first gives hyprland 0.57.2 + aquamarine 0.16 + quickshell 0.3.2 (0
+  # unresolved deps); every omarchy-* package, walker and google-chrome still come from [omarchy].
   if ! grep -q '^\[omarchy\]' "$CONF"; then
-    awk '
-      /^\[core\]/ && !done { print "[omarchy]"; print "Server = https://pkgs.omarchy.org/stable/$arch"; print ""; done = 1 }
-      { print }
-    ' "$CONF" > "$CONF.new" && mv "$CONF.new" "$CONF"
+    printf '\n[omarchy]\nServer = https://pkgs.omarchy.org/stable/$arch\n' >> "$CONF"
   fi
   grep -q '^\[omarchy\]' "$CONF" || { log "could not add [omarchy] to $CONF"; exit 6; }
   SYNCED=0
@@ -170,8 +227,8 @@ if ! stage_done; then
 fi
 
 # 5. the REAL omarchy package ----------------------------------------------------------------------------------------
-# Measured 2026-11-20 from the live dbs (omarchy-first order, minus the base rootfs): omarchy pulls 221 new packages,
-# 593 MiB download, 1.75 GiB installed (hyprland, quickshell, qt6, uwsm, sddm, networkmanager, pipewire, plymouth, ...).
+# Measured 2026-11-20 from the live dbs (ALARM-first order, minus the base rootfs): omarchy pulls 235 new packages,
+# 448 MiB download, 1.43 GiB installed (hyprland, quickshell, qt6, llvm-libs, uwsm, sddm, networkmanager, plymouth...).
 stage 5 "Installing Omarchy (the real package)"
 if ! stage_done; then
   mem_gate
@@ -301,6 +358,11 @@ command -v sway >/dev/null 2>&1 || log "note: sway missing; the fallback is Chro
 sh /opt/linuxdesk/clean/install-shims.sh || { log "the PRoot shims are not in place"; exit 7; }
 command -v elephant >/dev/null 2>&1 || log "note: elephant (walker's data service) is not packaged for aarch64; the launcher falls back to the Omarchy menu"
 mkdir -p "$MARK"
+# The sway fallback is start-sway.sh (shared with the layered Omarchy). It starts setup-omarchy.sh's `sway` / `apps`
+# installs in the background while their markers are missing; here sway came from stage 6 and Omarchy's apps are the
+# real package's business, so mark both as handled (delete omarchy-stage-8 to get the layered app set too).
+echo 1 > "$MARK/sway-v1"
+[ -f "$MARK/omarchy-stage-8" ] || echo 1 > "$MARK/omarchy-stage-8"
 command -v pulseaudio >/dev/null 2>&1 && echo "pulseaudio libpulse" > "$MARK/audio-v1" || log "note: pulseaudio missing; the session stays silent"
 echo "omarchy=$(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2) hyprland=$(pacman -Q hyprland 2>/dev/null | cut -d' ' -f2) $BIN" > "$MARK/omarchy-clean-v1"
 mark_done

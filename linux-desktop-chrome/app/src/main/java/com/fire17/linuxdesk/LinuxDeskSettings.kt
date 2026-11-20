@@ -31,6 +31,16 @@ class LinuxDeskSettings(context: Context) {
         get() = p.getBoolean("legacyDrawing", false)
         set(v) = p.edit().putBoolean("legacyDrawing", v).apply()
 
+    /**
+     * A2 one-pass rootfs install (linux/StreamInstall): download → gunzip → tar into rootfs-*.partial in one stream,
+     * sha256/md5 computed on the fly, swapped in only after the hash matches. Default ON: Tami asked for the fast
+     * install (2026-11-20, "download and install in really under a minute"). OFF = the old file mode (tarball on disk,
+     * HTTP Range resume after a broken download, then a separate hash and extract pass).
+     */
+    var streamInstall: Boolean
+        get() = p.getBoolean("streamInstall", true)
+        set(v) = p.edit().putBoolean("streamInstall", v).apply()
+
     /** PROOT_NO_SECCOMP=1: slower ptrace-only mode, for kernels where seccomp acceleration misbehaves. */
     var prootNoSeccomp: Boolean
         get() = p.getBoolean("prootNoSeccomp", false)

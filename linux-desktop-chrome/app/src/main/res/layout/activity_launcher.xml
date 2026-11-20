@@ -72,6 +72,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Omarchy (Arch Linux ARM: Chrome + i3 with Omarchy's look; first run downloads ~1.6 GB and needs ~4 GB free)" />
+
+            <!-- Experimental third option (Tami 2026-11-20): a fresh rootfs with the REAL omarchy package (notes/fresh/PLAN.md). -->
+            <RadioButton
+                android:id="@+id/distro_omarchy_clean"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Omarchy (clean) - EXPERIMENTAL: the real Omarchy on a fresh Arch Linux ARM; Hyprland when it can, else Sway. First run downloads ~1.7 GB and needs ~5 GB free" />
         </RadioGroup>
 
         <!-- Sway lane, experimental and OFF by default: Omarchy runs sway instead of i3 (K/linux/Desktop.kt). -->
@@ -211,6 +218,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/ld_opt_noseccomp" />
+
+        <!-- A2 one-pass Arch rootfs install (linux/StreamInstall.kt); default ON (Tami asked for the fast install). -->
+        <CheckBox
+            android:id="@+id/opt_stream_install"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_opt_stream_install" />
 
         <!-- GPU acceleration (gpu/GpuSession.kt): experimental, default OFF; disabled + explained on non-Adreno phones. -->
         <CheckBox
