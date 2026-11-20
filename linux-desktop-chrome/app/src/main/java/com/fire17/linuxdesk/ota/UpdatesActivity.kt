@@ -22,11 +22,14 @@ class OtaSettings(context: Context) {
 
     /** Base URL holding manifest.json + bundle.zip. Integrity comes from the signature, never from the host. */
     var baseUrl: String
-        get() = p.getString("ota_base_url", DEFAULT_BASE) ?: DEFAULT_BASE
+        get() = p.getString("ota_base_url", DEFAULT_BASE).let { if (it == null || it == OLD_DEFAULT_BASE) DEFAULT_BASE else it }
         set(v) = p.edit().putString("ota_base_url", v).apply()
 
     companion object {
-        const val DEFAULT_BASE = "https://github.com/fire17/linux-in-android-lab/releases/latest/download/"
+        // A fixed tag, not GitHub's "latest": the rootfs releases (omarchy-rootfs-v1, ...) became "latest" on
+        // 2026-11-20 and the check answered HTTP_404 (Tami's 12:07 video). OTA bundles go to the ota-latest release.
+        const val DEFAULT_BASE = "https://github.com/fire17/linux-in-android-lab/releases/download/ota-latest/"
+        const val OLD_DEFAULT_BASE = "https://github.com/fire17/linux-in-android-lab/releases/latest/download/"
     }
 }
 

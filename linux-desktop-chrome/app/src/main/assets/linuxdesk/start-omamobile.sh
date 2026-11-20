@@ -180,11 +180,20 @@ start_hyprland() {
   set -- dbus-run-session --config-file="$UH/.config/omarchy/proot-session-bus.conf"
   [ -f "$UH/.config/omarchy/proot-session-bus.conf" ] || set -- dbus-run-session
   VICD=$ICD; M=$OA/mesa/root/usr; MLDP=$LDP; MENV=""
-  # The bundle's own KGSL Mesa when present (start-omarchy-clean.sh): ALARM's Mesa has no kgsl driver.
-  if [ -d "$M/lib" ]; then
+  # The bundle's own KGSL Mesa only when its libraries resolve in THIS rootfs. 12:11 crash: its libgallium-26.3.0-devel
+  # needs libLLVM.so.22.1, this rootfs has llvm-libs 23 (libLLVM.so.23.1 only) -> EGL does not load -> Hyprland abort()s
+  # in loadGLProc (CHyprOpenGLImpl) ~1 s after start. Otherwise the rootfs Mesa (setup-gpu.sh's lfdevs kgsl build, the
+  # one start-hyprland.sh has always used).
+  if [ -d "$M/lib" ] && ! LD_LIBRARY_PATH=$M/lib:$LDP ldd "$M"/lib/libgallium-*.so 2>/dev/null | grep -q 'not found'; then
     MLDP=$M/lib:$LDP; MENV="LIBGL_DRIVERS_PATH=$M/lib/dri"
     VICD=$(ls "$M"/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1); VICD=${VICD:-$ICD}
+    say "Mesa: the bundle's ($M)"
+  else
+    say "Mesa: the rootfs's (the bundle's misses: $(LD_LIBRARY_PATH=$M/lib:$LDP ldd "$M"/lib/libgallium-*.so 2>/dev/null | awk '/not found/ {print $1}' | tr '\n' ' '))"
+    [ -e /usr/lib/dri/kgsl_dri.so ] || say "note: /usr/lib/dri has no kgsl_dri.so (setup-gpu.sh not run?); Hyprland may not get EGL"
   fi
+  # Hyprland's crash reporter writes to ~/.cache/hyprland (12:05: "failed to mkdir() crash report directory").
+  mkdir -p "$UH/.cache/hyprland" 2>/dev/null && chown 1000:1000 "$UH/.cache" "$UH/.cache/hyprland" 2>/dev/null
   # shellcheck disable=SC2086
   ( cd "$UH" 2>/dev/null || cd /
     exec setsid $AS env -u DISPLAY -u WAYLAND_DISPLAY $MENV \

@@ -127,16 +127,32 @@ try_hyprland() {
   say "clean: weston up (pid $WPID, ${W}x${Hh})"
 
   # Hyprland: the omarchy-android SHM env (A2 v2, proven 2026-11-19), the real Omarchy config from /etc/skel.
-  ICD=$(ls "$HS"/mesa/root/usr/share/vulkan/icd.d/freedreno_icd*.json /usr/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1)
+  # The bundle's own Mesa stage (lfdevs KGSL Freedreno) only when its libraries resolve in THIS rootfs. 12:11 crash:
+  # its libgallium-26.3.0-devel needs libLLVM.so.22.1, the rootfs has llvm-libs 23 (libLLVM.so.23.1 only) -> EGL does
+  # not load -> Hyprland abort()s in loadGLProc (CHyprOpenGLImpl) ~1 s after start. Otherwise the rootfs Mesa
+  # (setup-gpu.sh's kgsl build), the one start-hyprland.sh has always used.
+  M=$HS/mesa/root/usr
+  MOK=0
+  [ -d "$M/lib" ] && ! LD_LIBRARY_PATH=$M/lib:$HS/aquamarine/lib:$HS/compat/lib ldd "$M"/lib/libgallium-*.so 2>/dev/null \
+    | grep -q 'not found' && MOK=1
+  if [ "$MOK" = 1 ]; then say "clean: Mesa: the bundle's ($M)"; else
+    say "clean: Mesa: the rootfs's (the bundle's misses: $(LD_LIBRARY_PATH=$M/lib ldd "$M"/lib/libgallium-*.so 2>/dev/null | awk '/not found/ {print $1}' | tr '\n' ' '))"
+    [ -e /usr/lib/dri/kgsl_dri.so ] || say "clean: note: /usr/lib/dri has no kgsl_dri.so (setup-gpu.sh not run?); Hyprland may not get EGL"
+  fi
+  # Hyprland's crash reporter writes to ~/.cache/hyprland (12:05: "failed to mkdir() crash report directory").
+  mkdir -p "$H/.cache/hyprland" 2>/dev/null && chown 1000:1000 "$H/.cache" "$H/.cache/hyprland" 2>/dev/null
+  if [ "$MOK" = 1 ]; then
+    ICD=$(ls "$M"/share/vulkan/icd.d/freedreno_icd*.json /usr/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1)
+  else
+    ICD=$(ls /usr/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1)
+  fi
   HENV="HOME=$H USER=$U XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=wayland-omarchy XDG_SESSION_TYPE=wayland"
   HENV="$HENV XDG_CURRENT_DESKTOP=Hyprland XDG_SESSION_DESKTOP=Hyprland LANG=$LANG OMARCHY_PATH=$OMARCHY_PATH"
   HENV="$HENV OMARCHY_SCALE=1 OMARCHY_OUTPUT_WIDTH=$W OMARCHY_OUTPUT_HEIGHT=$Hh NO_AT_BRIDGE=1 QT_ACCESSIBILITY=0"
   HENV="$HENV QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland XWAYLAND_NO_GLAMOR=1"
   HENV="$HENV MESA_LOADER_DRIVER_OVERRIDE=${LINUXDESK_HYPR_GL:-kgsl} FD_KGSL_ENABLE_DMABUF=1 ${ICD:+VK_ICD_FILENAMES=$ICD}"
-  # The bundle's own Mesa stage (lfdevs KGSL Freedreno) when present: the stock ALARM Mesa has no kgsl driver.
-  M=$HS/mesa/root/usr
   LDP=$HS/aquamarine/lib:$HS/compat/lib
-  if [ -d "$M/lib" ]; then
+  if [ "$MOK" = 1 ]; then
     LDP=$M/lib:$LDP
     HENV="$HENV LIBGL_DRIVERS_PATH=$M/lib/dri"
     [ -f "$M/share/glvnd/egl_vendor.d/50_mesa.json" ] && HENV="$HENV __EGL_VENDOR_LIBRARY_FILENAMES=$M/share/glvnd/egl_vendor.d/50_mesa.json"
