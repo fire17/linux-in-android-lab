@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Genie link after an APK update or a reboot (genie/GenieLinkService.kt, Tami 15:05). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Microphone to Linux (audio/MicIn.kt). Requested at runtime ONLY when the person turns the in-app switch
          ON; default OFF. The genie link cannot turn it on. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -85,6 +87,29 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a user-started Linux desktop session (X server + Chromium) alive while the user works in it." />
         </service>
+
+        <!-- Tami 15:05: the genie link alone (iroh + Router, no session) when no session runs, so a paired genie
+             reaches the phone after an APK update or a reboot without opening the app. specialUse ONLY: Android 14+
+             allows it from BOOT_COMPLETED / MY_PACKAGE_REPLACED; it never uses the microphone or the camera. -->
+        <service
+            android:name=".genie.GenieLinkService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the user-paired remote-control link (iroh) reachable after an app update or reboot, until the user stops it." />
+        </service>
+
+        <!-- Starts only GenieLinkService, only when a genie is paired with access ON. Exported because the system
+             sends these broadcasts; both are protected, so other apps cannot send them. -->
+        <receiver
+            android:name=".genie.GenieBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Genie link (spec 01): pairing screen (pair lane) and the storage screen / delete review sheet (storage
              lane). Neither is exported, so nothing outside the app can open the Approve sheet. -->

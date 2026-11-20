@@ -62,4 +62,9 @@
         <item quantity="one">Confirm: delete %1$d file (%2$s)</item>
         <item quantity="other">Confirm: delete %1$d files (%2$s)</item>
     </plurals>
+
+    <!-- Tami 15:05: GenieLinkService (link only, after an APK update or a reboot). -->
+    <string name="ld_genie_link_channel">Genie remote link</string>
+    <string name="ld_genie_link_on">LinuxDesk remote link on</string>
+    <string name="ld_genie_link_on_text">Your paired genie can reach this phone. No Linux session, microphone or camera runs. Tap to open LinuxDesk.</string>
 </resources>

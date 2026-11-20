@@ -65,4 +65,9 @@
         <item quantity="many">אישור: למחוק %1$d קבצים (%2$s)</item>
         <item quantity="other">אישור: למחוק %1$d קבצים (%2$s)</item>
     </plurals>
+
+    <!-- Tami 15:05: GenieLinkService (link only, after an APK update or a reboot). -->
+    <string name="ld_genie_link_channel">קישור מרחוק לג\'יני</string>
+    <string name="ld_genie_link_on">הקישור המרוחק של LinuxDesk פועל</string>
+    <string name="ld_genie_link_on_text">הג\'יני המצומד שלך יכול להגיע לטלפון. לא פועלים סשן לינוקס, מיקרופון או מצלמה. הקש כדי לפתוח את LinuxDesk.</string>
 </resources>

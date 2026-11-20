@@ -24,6 +24,9 @@ import java.util.Base64
  *   restartBrowser()                 — when [ownsBrowser], replaces SessionService's restart (restarts deskd).
  *   stopGenie(ctx)                   — the notification's "Stop genie" (ACTION_STOP_GENIE); turns Genie access
  *                                       and Developer: local link OFF and closes every genie connection.
+ *   startLinkOnly(ctx)/stopLinkOnly() — GenieLinkService (after an APK update or a reboot): the iroh link + Router
+ *                                       with no session, no proot, no deskd; Linux verbs answer not_ready. A
+ *                                       session's start() takes over (and stops GenieLinkService).
  *
  * What runs (each gated by its own OFF-by-default switch, spec 01 §4 rule 2):
  *  - Genie access ON  → setup-genie.sh (once, marker etc/linuxdesk/genie-v2) → deskd on 127.0.0.1:8765 with a
@@ -54,6 +57,9 @@ object GenieRuntime {
     @Volatile private var browserFlags: List<String>? = null
     @Volatile private var sysvipc = true
     @Volatile var ownsBrowser = false
+        private set
+    /** True while only the link runs (GenieLinkService, no session); session stop() leaves it alone. */
+    @Volatile var linkOnly = false
         private set
 
     private var router: Router? = null
@@ -88,7 +94,9 @@ object GenieRuntime {
      */
     fun start(ctx: Context, proot: ProotRuntime, browserFlags: List<String>? = null, sysvipc: Boolean = true): Boolean {
         val a = ctx.applicationContext
+        val hadLinkOnly: Boolean
         synchronized(lock) {
+            hadLinkOnly = linkOnly
             if (running) stopLocked()
             app = a
             this.proot = proot
@@ -105,6 +113,8 @@ object GenieRuntime {
         }
         Binding.removeListener(listener)
         Binding.addListener(listener)
+        // The session now hosts the link (its FGS keeps the process alive): the link-only service steps aside.
+        if (hadLinkOnly) try { GenieLinkService.stop(a) } catch (_: Throwable) {}
 
         // The rootfs may have been replaced by RootfsInstaller: re-sync genie.hash before deskd reads it.
         try { Binding.syncHashFile(a) } catch (_: Throwable) {}
@@ -124,8 +134,48 @@ object GenieRuntime {
     }
 
     fun stop() {
+        synchronized(lock) {
+            if (linkOnly) return             // GenieLinkService's link, not a session's: only stopLinkOnly() ends it
+            Binding.removeListener(listener)
+            stopLocked()
+        }
+    }
+
+    /**
+     * Tami 15:05: after an APK update or a reboot the genie could not reach the phone until he opened the app.
+     * GenieLinkService calls this: the same relay + Router + IrohLink (and WireServer if that switch is ON) as a
+     * session, but no proot and no deskd, so sys.* and fs.* answer and Linux verbs say not_ready. Never touches the
+     * mic, the camera, X or Chromium. Returns false when a session (or this) already runs the link.
+     */
+    fun startLinkOnly(ctx: Context): Boolean {
+        val a = ctx.applicationContext
+        synchronized(lock) {
+            if (running) return false
+            app = a
+            proot = null
+            browserFlags = null
+            running = true
+            linkOnly = true
+            ownsBrowser = false
+            restarts.clear()
+            val r = DeskdClient(DESKD_PORT) { log(it) }    // never started: no deskd in link-only mode
+            relay = r
+            router = Router(AndroidEnv(a), r, Audit(File(a.filesDir, "genie-audit.jsonl")))
+        }
         Binding.removeListener(listener)
-        synchronized(lock) { stopLocked() }
+        Binding.addListener(listener)
+        log("link only (no session): genie link starting")
+        reconcile()
+        return true
+    }
+
+    /** GenieLinkService ending: stops the link only if it is still the link-only one (a session may own it now). */
+    fun stopLinkOnly() {
+        synchronized(lock) {
+            if (!linkOnly) return
+            Binding.removeListener(listener)
+            stopLocked()
+        }
     }
 
     /** SessionService's "restart browser" while deskd is Chromium's parent: restart deskd (and so the browser). */
@@ -168,7 +218,7 @@ object GenieRuntime {
             val access = GenieSettings.genieAccess(a)
             val local = GenieSettings.localLink(a)
 
-            if (access && !deskdWanted) {
+            if (access && !deskdWanted && !linkOnly) {
                 // Turned ON mid-session: SessionService already launched the browser, so deskd starts without
                 // it (no second Chromium). browser.* appears after the next session start.
                 if (File(proot?.rootfsDir ?: return, GENIE_MARKER).isFile) {
@@ -343,6 +393,7 @@ object GenieRuntime {
 
     private fun stopLocked() {
         running = false
+        linkOnly = false
         deskdWanted = false
         ownsBrowser = false
         iroh?.stop(); iroh = null
