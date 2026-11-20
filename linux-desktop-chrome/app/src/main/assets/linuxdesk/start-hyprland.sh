@@ -91,13 +91,17 @@ for t in "$OA/omarchy-qt612" "$OA/omarchy"; do
   qt612_safe "$t" && { OMSRC=$t; break; }
 done
 if [ -z "$OMSRC" ]; then
+  # The APK build (aapt) strips ".gz" from asset names and stores them decompressed, so the copy in /opt/linuxdesk is
+  # shell-shellcolor.tar (0.2.33 looked only for .tar.gz). Accept either; the sha256 pins the .tar.gz bytes only.
   TGZ=$LD/hyprland/shell-shellcolor.tar.gz
   SUM=99c4f432d651961d87109ce1b4891b57b364c0f3155594154700d2702b8de9a9
+  TARX=-xzf
+  if [ ! -f "$TGZ" ] && [ -f "$LD/hyprland/shell-shellcolor.tar" ]; then TGZ=$LD/hyprland/shell-shellcolor.tar; TARX=-xf; SUM=""; fi
   if [ ! -d "$OA/omarchy" ]; then
     fallback "no Omarchy tree at $OA/omarchy" "$@"
   elif [ ! -f "$TGZ" ]; then
     fallback "no $TGZ to fix Qt 6.12's Color clash" "$@"
-  elif command -v sha256sum >/dev/null 2>&1 && [ "$(sha256sum "$TGZ" | cut -d' ' -f1)" != "$SUM" ]; then
+  elif [ -n "$SUM" ] && command -v sha256sum >/dev/null 2>&1 && [ "$(sha256sum "$TGZ" | cut -d' ' -f1)" != "$SUM" ]; then
     fallback "$TGZ has the wrong sha256" "$@"
   fi
   T=$OA/omarchy-qt612.tmp
@@ -105,7 +109,7 @@ if [ -z "$OMSRC" ]; then
   for e in "$OA"/omarchy/* "$OA"/omarchy/.[!.]*; do
     [ -e "$e" ] || continue; [ "${e##*/}" = shell ] && continue; ln -s "$e" "$T/${e##*/}"
   done
-  if tar -xzf "$TGZ" -C "$T" && [ -f "$T/shell/Commons/ShellColor.qml" ] && [ ! -e "$T/shell/Commons/Color.qml" ] \
+  if tar $TARX "$TGZ" -C "$T" && [ -f "$T/shell/Commons/ShellColor.qml" ] && [ ! -e "$T/shell/Commons/Color.qml" ] \
      && grep -q '^singleton ShellColor ' "$T/shell/Commons/qmldir" && mv "$T" "$OA/omarchy-qt612"; then
     OMSRC=$OA/omarchy-qt612
     say "staged the Qt 6.12 shell fix: $OMSRC ($(find "$OMSRC/shell" -type f | wc -l | tr -d ' ') files)"
