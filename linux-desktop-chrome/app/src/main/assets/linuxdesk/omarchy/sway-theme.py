@@ -38,7 +38,108 @@ FONT = ot.FONT
 px = ot.px
 # Bumped when the generated sway config changes; start-sway.sh re-renders an older config at the next Start (like I3_REV).
 # rev 2: bottom dock (second waybar), touch-sized top bar, zoom.sh on Super+minus / equal / 0.
-SWAY_REV = "linuxdesk-sway-rev 3"
+# rev 4: style end4 (/etc/linuxdesk/sway-style, the default): matugen palette, pill bar, taskbar row, Mac dock /
+#        nwg-dock, swaync, floating windows (/etc/linuxdesk/sway-layout). The stamp carries style + layout so changing
+#        either file re-renders at the next Start.
+SWAY_REV = "linuxdesk-sway-rev 4"
+
+
+def _setting(path, allowed, default):
+    """One-word settings file (e.g. /etc/linuxdesk/sway-style); missing/unreadable/unknown -> default."""
+    try:
+        with open(path) as f:
+            v = f.read().strip().lower()
+    except OSError:
+        return default
+    return v if v in allowed else default
+
+
+# end4 = Tami's pick (2026-11-20, design #8, end-4 "illogical-impulse"): matugen palette, pill bar + taskbar, Mac dock,
+# floating windows. omarchy = the previous look (flat 48 px bar, tiling). LINUXDESK_ETC lets tests point elsewhere.
+ETC = os.environ.get("LINUXDESK_ETC", "/etc/linuxdesk")
+STYLE = _setting(os.path.join(ETC, "sway-style"), ("end4", "omarchy"), "end4")
+LAYOUT = _setting(os.path.join(ETC, "sway-layout"), ("floating", "tiling"), "floating" if STYLE == "end4" else "tiling")
+
+
+# end-4 (illogical-impulse) default dark scheme: Material 3 roles. Used when matugen is missing, slow or fails.
+END4_DEFAULT = {
+    "background": "#141218", "on_background": "#e6e0e9", "surface": "#141218", "surface_dim": "#141218",
+    "surface_bright": "#3b383e", "surface_container_lowest": "#0f0d13", "surface_container_low": "#1d1b20",
+    "surface_container": "#211f26", "surface_container_high": "#2b2930", "surface_container_highest": "#36343b",
+    "on_surface": "#e6e0e9", "on_surface_variant": "#cac4d0", "outline": "#938f99", "outline_variant": "#49454f",
+    "primary": "#d0bcff", "on_primary": "#381e72", "primary_container": "#4f378b", "on_primary_container": "#eaddff",
+    "secondary": "#ccc2dc", "on_secondary": "#332d41", "secondary_container": "#4a4458",
+    "on_secondary_container": "#e8def8", "tertiary": "#efb8c8", "tertiary_container": "#633b48",
+    "on_tertiary_container": "#ffd8e4", "error": "#f2b8b5", "on_error": "#601410", "error_container": "#8c1d18",
+    "inverse_surface": "#e6e0e9", "inverse_on_surface": "#322f35", "inverse_primary": "#6750a4",
+}
+
+
+def _hexstr(v):
+    """A matugen color value: '#rrggbb' itself, or a dict holding it (matugen's JSON shape changed across versions)."""
+    if isinstance(v, str) and v.startswith("#") and len(v) in (7, 9):
+        return v[:7].lower()
+    if isinstance(v, dict):
+        for k in ("color", "hex", "dark", "default"):
+            if k in v:
+                return _hexstr(v[k])
+    return None
+
+
+def _parse_matugen(data):
+    """matugen 2.x: {"colors": {"dark": {role: hex}}}; 3.x/4.x: {"colors": {role: {"dark": hex | {"color": hex}}}}."""
+    colors = data.get("colors", data) if isinstance(data, dict) else {}
+    if isinstance(colors.get("dark"), dict):
+        colors = colors["dark"]
+    out = {}
+    for role, v in colors.items():
+        if isinstance(v, dict) and "dark" in v:
+            v = v["dark"]
+        h = _hexstr(v)
+        if h:
+            out[role] = h
+    return out
+
+
+def matugen_palette(wallpaper, timeout=10):
+    """M3 dark roles from the wallpaper via matugen; (palette, source). Never raises; 10 s budget in total."""
+    import shutil
+    import subprocess
+    import time
+    if not wallpaper or not os.path.isfile(wallpaper) or not shutil.which("matugen"):
+        return dict(END4_DEFAULT), "end-4 default (no matugen or wallpaper)"
+    deadline = time.monotonic() + timeout
+    # --source-color-index 0: newer matugen asks on the tty which source color to use when an image has several.
+    for extra in (["--source-color-index", "0"], []):
+        left = deadline - time.monotonic()
+        if left <= 0.5:
+            break
+        try:
+            r = subprocess.run(["matugen", "image", wallpaper, "-m", "dark", "--json", "hex", *extra],
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=left)
+            if r.returncode != 0:
+                continue
+            got = _parse_matugen(json.loads(r.stdout[r.stdout.index("{"):]))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        if all(k in got for k in ("primary", "surface", "on_surface", "primary_container")):
+            pal = dict(END4_DEFAULT)
+            pal.update(got)
+            return pal, "matugen " + os.path.basename(wallpaper)
+    return dict(END4_DEFAULT), "end-4 default (matugen failed)"
+
+
+def end4_colors(c, m):
+    """The Omarchy color slots (used by foot, wofi, mako, sway) re-pointed at M3 roles; ANSI hues stay the theme's."""
+    c = dict(c)
+    c.update({
+        "accent": m["primary"], "background": m["surface"], "foreground": m["on_surface"],
+        "lighter_background": m["surface_container_high"], "dark_background": m["surface_container_low"],
+        "selection": m["secondary_container"], "muted": m["outline_variant"],
+        "dark_foreground": m["on_surface_variant"], "bright_foreground": m["inverse_surface"],
+        "light_foreground": m["on_surface"], "red": m["error"],
+    })
+    return c
 
 
 def pt(n):
@@ -47,7 +148,7 @@ def pt(n):
 
 
 def stamp():
-    return f"{SWAY_REV} scale {ot.scale_str()}"
+    return f"{SWAY_REV} scale {ot.scale_str()} style {STYLE} layout {LAYOUT}"
 
 
 TERMINAL = "foot"
@@ -63,7 +164,7 @@ BINDINGS = [
     ("$mod+Shift+Return", f"exec {BROWSER}", "SUPER+SHIFT+RETURN Browser"),
     ("$mod+Shift+b", f"exec {BROWSER}", "SUPER+SHIFT+B Browser"),
     ("$mod+Shift+n", f"exec {TERMINAL} nvim", "SUPER+SHIFT+N Editor"),
-    ("$mod+space", f"exec {LAUNCHER}", "SUPER+SPACE Omarchy menu (wofi here)"),
+    ("$mod+space", "exec sh /opt/linuxdesk/omarchy/omarchy-menu.sh", "SUPER+SPACE Omarchy menu"),
     ("$mod+Mod1+space", f"exec {LAUNCHER}", "SUPER+ALT+SPACE Apps"),
     ("$mod+d", "exec wofi --show run", "i3/sway default: run any command"),
     ("$mod+Escape", "exec swaynag -t warning -m 'Leave the sway session?' -B 'Reload sway' 'swaymsg reload'",
@@ -99,7 +200,8 @@ def _cmd(cmd):
     return cmd
 
 
-def sway_config(c, name, cfg):
+def sway_config(c, name, cfg, m=None):
+    """m: the M3 palette (style end4); None = the omarchy style."""
     lines = [
         f"# Generated by /opt/linuxdesk/omarchy/sway-theme.py from Omarchy theme '{name}'. Re-run it to change themes.",
         f"# {stamp()}",
@@ -117,6 +219,31 @@ def sway_config(c, name, cfg):
         "floating_modifier $mod normal",
         "workspace_auto_back_and_forth yes",
         "",
+    ]
+    if m:
+        # Touch: title bars >= 40 px (font ~15 px + 2 x 13 px padding) so a finger can grab and drag a floating window.
+        lines = lines[:3] + [f"font pango:Inter Semi-Bold {pt(11)}", "xwayland enable", "",
+                             "# end4: rounded-look pills live in waybar; windows get a thick touch title bar.",
+                             f"default_border normal {px(2)}",
+                             f"default_floating_border normal {px(2)}",
+                             f"titlebar_padding {px(12)} {px(13)}",
+                             "title_align center",
+                             "hide_edge_borders smart",
+                             f"gaps inner {px(6)}",
+                             f"gaps outer {px(4)}",
+                             "focus_follows_mouse no",
+                             "floating_modifier $mod normal",
+                             "workspace_auto_back_and_forth yes",
+                             "",
+                             "# class                 border    backgr.   text      indicator child_border (M3 roles)",
+                             f"client.focused          {m['primary']} {m['primary_container']} {m['on_primary_container']} {m['primary']} {m['primary']}",
+                             f"client.focused_inactive {m['outline_variant']} {m['surface_container_high']} {m['on_surface_variant']} {m['outline_variant']} {m['outline_variant']}",
+                             f"client.unfocused        {m['outline_variant']} {m['surface_container']} {m['on_surface_variant']} {m['outline_variant']} {m['outline_variant']}",
+                             f"client.urgent           {m['error']} {m['error_container']} {m['on_surface']} {m['error']} {m['error']}",
+                             "",
+                             "# Keybinds translated from Omarchy 4.5 (Hyprland → sway)"]
+    else:
+        lines += [
         "# class                 border        backgr.       text          indicator     child_border",
         f"client.focused          {c['accent']} {c['background']} {c['foreground']} {c['accent']} {c['accent']}",
         f"client.focused_inactive {c['muted']} {c['background']} {c['dark_foreground']} {c['muted']} {c['muted']}",
@@ -124,7 +251,7 @@ def sway_config(c, name, cfg):
         f"client.urgent           {c['red']} {c['background']} {c['foreground']} {c['red']} {c['red']}",
         "",
         "# Keybinds translated from Omarchy 4.5 (Hyprland → sway)",
-    ]
+        ]
     for key, cmd, src in BINDINGS:
         lines.append(f"# {src}")
         lines.append(f"bindsym {key} {_cmd(cmd)}")
@@ -142,6 +269,26 @@ def sway_config(c, name, cfg):
         'for_window [app_id="wofi"] floating enable',
         "",
     ]
+    if LAYOUT == "floating":
+        # /etc/linuxdesk/sway-layout = floating (end4's default): Windows-like windows. sway runs every matching
+        # for_window in order and splits commands on ',' -- so one command per line. Super+T tiles one window.
+        lines += [
+            "# Floating by default (/etc/linuxdesk/sway-layout). Wayland windows have an app_id, XWayland ones a class.",
+            'for_window [app_id=".*"] floating enable',
+            'for_window [class=".*"] floating enable',
+            'for_window [app_id=".*"] resize set width 92 ppt height 70 ppt',
+            'for_window [class=".*"] resize set width 92 ppt height 70 ppt',
+            'for_window [app_id=".*"] move position center',
+            'for_window [class=".*"] move position center',
+            "# The browser keeps the whole workspace (the output minus the bar and the dock, their exclusive zones).",
+        ]
+        for crit in ('app_id="(?i)chrom"', 'class="(?i)chrom"'):
+            # `resize set` on a floating window sizes its CONTENT (sway resize.c), so borders + title bar would push
+            # a 100 ppt browser under the dock: the maximized browser has no border (Super+drag still moves it).
+            lines += [f"for_window [{crit}] border none",
+                      f"for_window [{crit}] resize set width 100 ppt height 100 ppt",
+                      f"for_window [{crit}] move position 0 px 0 px"]
+        lines += [f'for_window [app_id="wofi"] resize set width 85 ppt height 60 ppt', ""]
     wp = ot.wallpaper(name)
     if wp and "," not in wp and ";" not in wp and "'" not in wp:
         lines.append(f"output * bg '{wp}' fill {c['background']}")
@@ -154,6 +301,14 @@ def sway_config(c, name, cfg):
         _cmd(f"exec waybar -c {cfg}/waybar/dock.jsonc -s {cfg}/waybar/dock.css"),
         _cmd("exec mako"),
     ]
+    if m:
+        lines[-3:] = [
+            "# end4: waybar = the top bar; dock.sh = nwg-dock or the waybar taskbar + dock; swaync (else mako).",
+            _cmd("exec waybar"),
+            _cmd(f"exec sh {cfg}/sway/dock.sh"),
+            _cmd(f"exec {NOTIFY}"),
+        ]
+        del lines[-5]   # the omarchy comment line
     return "\n".join(lines) + "\n"
 
 
@@ -171,7 +326,7 @@ def waybar_config():
         "modules-right": ["pulseaudio"],   # phone width at zoom 150% is ~645 px: memory left out
         "custom/omarchy": {
             "format": "",
-            "on-click": LAUNCHER,
+            "on-click": "sh /opt/linuxdesk/omarchy/omarchy-menu.sh",
             "tooltip-format": "Omarchy Menu (Super + Space)",
         },
         "sway/workspaces": {
@@ -323,6 +478,264 @@ tooltip label {{ color: @foreground; font-size: {px(14)}px; }}
 """
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# end4 style (Tami, 2026-11-20: design #8 end-4 "illogical-impulse" + a Mac dock + a taskbar + floating windows).
+# Layout, ~645 logical px wide (portrait 968 px at scale 1.5):
+#   top bar  : pills  [logo][workspaces 1-3]  ...  [clock]  ...  [zoom -][zoom +][volume]
+#   above dock: the taskbar row, open windows as icon pills (wlr/taskbar)
+#   bottom   : the Mac dock, a centered rounded container: Apps, Terminal, Browser, Files
+# Why the taskbar is NOT in the top bar: logo + 3 workspaces + clock + zoom + volume already take ~460 of 645 px with
+# 48 px touch pills, leaving room for ~2 task pills -- a third window would push the clock off-center or clip.
+# It sits in the dock's waybar as a vertical group (one layer surface) rather than as a third bar: two bars anchored
+# at the bottom stack in launch order, which is a race between two `exec`s.
+# Why zoom -/+ moved to the top bar: nwg-dock (preferred when installed) has no custom buttons, so the zoom buttons
+# would vanish with it; the top bar is always waybar.
+END4_FONT = f"'Inter', '{FONT}'"   # inter-font for text; the Nerd Font still supplies every glyph (fontconfig fallback)
+NOTIFY = "sh -c 'command -v swaync >/dev/null && exec swaync || exec mako'"
+
+
+def _m3_colors(m):
+    return "\n".join(f"@define-color {k} {v};" for k, v in sorted(m.items()))
+
+
+def end4_bar_config():
+    cfg = json.loads(waybar_config().split("\n", 1)[1])
+    cfg.update({
+        "height": px(56),
+        "margin-top": px(4), "margin-left": px(6), "margin-right": px(6),
+        "spacing": px(6),
+        "modules-right": ["custom/zoom-out", "custom/zoom-in", "pulseaudio"],
+        "custom/zoom-out": {"format": "", "on-click": f"{ZOOM} out", "tooltip-format": "Zoom out (Super + minus)"},
+        "custom/zoom-in": {"format": "", "on-click": f"{ZOOM} in", "tooltip-format": "Zoom in (Super + equal)"},
+    })
+    cfg["sway/workspaces"]["format"] = "{name}"   # plain numbers; the focused one is a primary_container pill
+    del cfg["sway/workspaces"]["format-icons"]
+    head = "// Generated by /opt/linuxdesk/omarchy/sway-theme.py, style end4: the top bar of pills\n"
+    return head + json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+
+
+def end4_bar_style(m):
+    return f"""/* Generated by sway-theme.py, style end4 (end-4 illogical-impulse pills; matugen/M3 colors) */
+{_m3_colors(m)}
+
+* {{
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  font-family: {END4_FONT};
+  font-size: {px(16)}px;
+  color: @on_surface;
+}}
+window#waybar {{ background-color: transparent; }}
+
+/* Every module is a pill on surface_container; touch targets are at least 48 px. */
+#custom-omarchy, #workspaces, #clock, #custom-zoom-out, #custom-zoom-in, #pulseaudio {{
+  background-color: alpha(@surface_container, 0.94);
+  border: {px(1)}px solid @outline_variant;
+  border-radius: 999px;
+  min-height: {px(48)}px;
+}}
+#custom-omarchy {{
+  font-family: '{FONT}';
+  font-size: {px(24)}px;
+  min-width: {px(48)}px;
+  padding: 0 {px(10)}px;
+  color: @primary;
+}}
+#workspaces {{ padding: 0 {px(3)}px; }}
+#workspaces button {{
+  all: initial;
+  font-family: {END4_FONT};
+  font-size: {px(16)}px;
+  font-weight: bold;
+  color: @on_surface_variant;
+  min-width: {px(42)}px;
+  min-height: {px(42)}px;
+  margin: {px(3)}px {px(1)}px;
+  border-radius: 999px;
+}}
+#workspaces button label {{ min-width: {px(42)}px; }}
+#workspaces button.focused {{ background-color: @primary_container; color: @on_primary_container; }}
+#workspaces button.urgent {{ background-color: @error; color: @on_error; }}
+#workspaces button.persistent {{ color: alpha(@on_surface_variant, 0.55); }}
+#clock {{ padding: 0 {px(16)}px; font-weight: bold; }}
+#custom-zoom-out, #custom-zoom-in, #pulseaudio {{
+  font-family: '{FONT}';
+  font-size: {px(20)}px;
+  min-width: {px(48)}px;
+  padding: 0 {px(4)}px;
+}}
+#pulseaudio.muted {{ color: @error; }}
+tooltip {{ background-color: @surface_container_high; border: {px(1)}px solid @outline_variant; border-radius: {px(12)}px; }}
+tooltip label {{ color: @on_surface; font-size: {px(14)}px; }}
+"""
+
+
+END4_DOCK = DOCK[:4]   # Apps, Terminal, Browser, Files (zoom is in the top bar, see above)
+
+
+def end4_taskbar():
+    return {
+        "format": "{icon}",
+        "icon-size": px(28),
+        "tooltip-format": "{title}",
+        "on-click": "activate",
+        "on-click-middle": "close",
+        "all-outputs": True,
+    }
+
+
+def end4_dock_config():
+    cfg = {
+        "name": "dock",
+        "layer": "top",
+        "position": "bottom",
+        "margin-bottom": px(10),
+        "spacing": 0,
+        "reload_style_on_change": True,
+        "modules-left": [],
+        "modules-center": ["group/stack"],
+        "modules-right": [],
+        "group/stack": {"orientation": "vertical", "modules": ["wlr/taskbar", "group/dockrow"]},
+        "group/dockrow": {"orientation": "horizontal", "modules": [f"custom/{m}" for m, _, _, _ in END4_DOCK]},
+        "wlr/taskbar": end4_taskbar(),
+    }
+    for m, glyph, click, tip in END4_DOCK:
+        cfg[f"custom/{m}"] = {"format": glyph, "on-click": click, "tooltip-format": tip}
+    head = ("// Generated by /opt/linuxdesk/omarchy/sway-theme.py, style end4: taskbar row + Mac dock (the fallback\n"
+            "// when nwg-dock is not installed; see ~/.config/sway/dock.sh)\n")
+    return head + json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+
+
+def end4_dock_style(m):
+    buttons = ", ".join(f"#custom-{x}" for x, _, _, _ in END4_DOCK)
+    return f"""/* Generated by sway-theme.py, style end4: the taskbar row and the Mac dock. The bar window is transparent and
+   full width; the centered rounded boxes are drawn by CSS (pixman: no blur, no shadow -> a 1 px outline instead). */
+{_m3_colors(m)}
+
+* {{ border: none; min-height: 0; font-family: {END4_FONT}; color: @on_surface; }}
+window#waybar {{ background-color: transparent; }}
+
+#taskbar {{
+  background-color: alpha(@surface_container, 0.94);
+  border: {px(1)}px solid @outline_variant;
+  border-radius: 999px;
+  padding: {px(4)}px;
+  margin-bottom: {px(8)}px;
+}}
+#taskbar.empty {{ background-color: transparent; border-color: transparent; padding: 0; margin: 0; }}
+#taskbar button {{
+  min-width: {px(48)}px;
+  min-height: {px(48)}px;
+  padding: 0 {px(6)}px;
+  margin: 0 {px(2)}px;
+  border-radius: 999px;
+  background-color: transparent;
+}}
+#taskbar button.active {{ background-color: @primary_container; }}
+#taskbar button:hover {{ background-color: @surface_container_highest; }}
+
+#dockrow {{
+  background-color: alpha(@surface_container_low, 0.94);
+  border: {px(1)}px solid @outline_variant;
+  border-radius: {px(20)}px;
+  padding: {px(8)}px {px(10)}px;
+}}
+{buttons} {{
+  font-family: '{FONT}';
+  font-size: {px(30)}px;
+  color: @on_surface;
+  min-width: {px(64)}px;
+  min-height: {px(64)}px;
+  margin: 0 {px(4)}px;
+  border-radius: {px(16)}px;
+  background-color: @surface_container_high;
+}}
+{", ".join(f"#custom-{x}:hover" for x, _, _, _ in END4_DOCK)} {{ background-color: @secondary_container; color: @on_secondary_container; }}
+#custom-apps {{ background-color: @primary_container; color: @on_primary_container; }}
+tooltip {{ background-color: @surface_container_high; border: {px(1)}px solid @outline_variant; border-radius: {px(12)}px; }}
+tooltip label {{ color: @on_surface; font-size: {px(14)}px; }}
+"""
+
+
+def end4_dock_sh(cfg):
+    """~/.config/sway/dock.sh: nwg-dock when installed (pinned apps + running windows + launcher), else the waybar dock.
+    No -d (auto-hide): its hotspot needs a hovering pointer, which a finger never gives. -x reserves the dock's height
+    so floating Chrome (sized to the workspace) never sits under it. -nows: the top bar has the workspaces."""
+    return f"""#!/bin/sh
+# Generated by /opt/linuxdesk/omarchy/sway-theme.py (style end4): the bottom dock.
+if command -v nwg-dock >/dev/null 2>&1; then
+  exec nwg-dock -x -nows -i {px(48)} -mb {px(10)} -c "{LAUNCHER}"
+fi
+exec waybar -c "{cfg}/waybar/dock.jsonc" -s "{cfg}/waybar/dock.css"
+"""
+
+
+def end4_nwg_dock_style(m):
+    return f"""/* Generated by sway-theme.py, style end4: nwg-dock as the Mac dock (M3 colors from matugen) */
+window {{
+  background-color: alpha({m['surface_container_low']}, 0.94);
+  border: {px(1)}px solid {m['outline_variant']};
+  border-radius: {px(20)}px;
+}}
+#box {{ padding: {px(8)}px {px(10)}px; }}
+button, image {{ background: none; border-style: none; box-shadow: none; color: {m['on_surface']}; }}
+button {{
+  min-width: {px(64)}px;
+  min-height: {px(64)}px;
+  padding: {px(4)}px;
+  margin: 0 {px(4)}px;
+  border-radius: {px(16)}px;
+  font-family: {END4_FONT};
+  font-size: {px(12)}px;
+}}
+button:hover {{ background-color: {m['secondary_container']}; }}
+button:focus, button:active, button:checked {{ background-color: {m['primary_container']}; color: {m['on_primary_container']}; }}
+"""
+
+
+def end4_swaync_style(m):
+    return f"""/* Generated by sway-theme.py, style end4: swaync recolored from the matugen/M3 palette. Keeps swaync's own
+   layout (imported) and only overrides colors, radii and the font. */
+@import url("/etc/xdg/swaync/style.css");
+{_m3_colors(m)}
+
+* {{ font-family: {END4_FONT}; }}
+.notification-row {{ outline: none; }}
+.notification-row .notification-background .notification,
+.notification {{
+  background: @surface_container_high;
+  color: @on_surface;
+  border: {px(1)}px solid @outline_variant;
+  border-radius: {px(20)}px;
+}}
+.notification.critical {{ border-color: @error; }}
+.notification .summary {{ color: @on_surface; font-weight: bold; }}
+.notification .body {{ color: @on_surface_variant; }}
+.close-button {{ background: @surface_container_highest; color: @on_surface; border-radius: 999px; }}
+.control-center {{
+  background: alpha(@surface, 0.97);
+  color: @on_surface;
+  border: {px(1)}px solid @outline_variant;
+  border-radius: {px(24)}px;
+}}
+.widget-title > button, .widget-dnd > switch {{ background: @surface_container_highest; border-radius: 999px; }}
+.widget-dnd > switch:checked {{ background: @primary_container; }}
+.widget-dnd > switch slider {{ background: @primary; border-radius: 999px; }}
+"""
+
+
+def end4_wofi(c, m):
+    return wofi(c).replace(
+        "window {", f"window {{ border-radius: {px(24)}px;", 1
+    ) + (f"#input {{ border-radius: 999px; background-color: {m['surface_container_high']}; }}\n"
+         f"#entry {{ border-radius: 999px; }}\n"
+         f"#entry:selected {{ background-color: {m['primary_container']}; }}\n"
+         f"#entry:selected #text {{ color: {m['on_primary_container']}; }}\n"
+         f"window {{ border-color: {m['outline_variant']}; background-color: {m['surface_container']}; }}\n"
+         f"#inner-box, #outer-box, #scroll {{ background-color: {m['surface_container']}; }}\n")
+
+
 def foot(c):
     h = lambda k: c[k].lstrip("#")  # noqa: E731  (foot wants RRGGBB without '#')
     return f"""# Generated from the Omarchy theme (colors.toml) by sway-theme.py
@@ -382,7 +795,7 @@ def wofi(c):
 window {{ background-color: {c['background']}; border: {px(2)}px solid {c['accent']}; font-family: '{FONT}'; font-size: {px(14)}px; }}
 #input {{ margin: {px(6)}px; padding: {px(6)}px; border: none; background-color: {c['lighter_background']}; color: {c['foreground']}; }}
 #inner-box, #outer-box, #scroll {{ background-color: {c['background']}; }}
-#entry {{ padding: {px(6)}px; color: {c['foreground']}; }}
+#entry {{ padding: {px(6)}px; min-height: {px(56)}px; color: {c['foreground']}; }}
 #entry:selected {{ background-color: {c['selection']}; }}
 #entry:selected #text {{ color: {c['accent']}; }}
 """
@@ -396,6 +809,23 @@ def main(argv):
     name = argv[1] if len(argv) > 1 else "tokyo-night"
     c = ot.load(name)
     cfg = os.path.join(ot.OUT_HOME, ".config")
+    if STYLE == "end4":
+        m, src = matugen_palette(ot.wallpaper(name))
+        c = end4_colors(c, m)
+        ot.write(os.path.join(cfg, "sway", "config"), sway_config(c, name, cfg, m))
+        ot.write(os.path.join(cfg, "sway", "dock.sh"), end4_dock_sh(cfg))
+        ot.write(os.path.join(cfg, "waybar", "config.jsonc"), end4_bar_config())
+        ot.write(os.path.join(cfg, "waybar", "style.css"), end4_bar_style(m))
+        ot.write(os.path.join(cfg, "waybar", "dock.jsonc"), end4_dock_config())
+        ot.write(os.path.join(cfg, "waybar", "dock.css"), end4_dock_style(m))
+        ot.write(os.path.join(cfg, "nwg-dock", "style.css"), end4_nwg_dock_style(m))
+        ot.write(os.path.join(cfg, "swaync", "style.css"), end4_swaync_style(m))
+        ot.write(os.path.join(cfg, "foot", "foot.ini"), foot(c))
+        ot.write(os.path.join(cfg, "mako", "config"), mako(c).replace("border-radius=0", f"border-radius={px(20)}"))
+        ot.write(os.path.join(cfg, "wofi", "style.css"), end4_wofi(c, m))
+        print(f"[sway-theme] style end4 ({LAYOUT}), Omarchy theme '{name}', palette: {src} "
+              f"(primary {m['primary']}, surface {m['surface']})")
+        return 0
     ot.write(os.path.join(cfg, "sway", "config"), sway_config(c, name, cfg))
     ot.write(os.path.join(cfg, "waybar", "config.jsonc"), waybar_config())
     ot.write(os.path.join(cfg, "waybar", "style.css"), waybar_style(c))
@@ -404,7 +834,7 @@ def main(argv):
     ot.write(os.path.join(cfg, "foot", "foot.ini"), foot(c))
     ot.write(os.path.join(cfg, "mako", "config"), mako(c))
     ot.write(os.path.join(cfg, "wofi", "style.css"), wofi(c))
-    print(f"[sway-theme] Omarchy theme '{name}' rendered for sway (accent {c['accent']}, background {c['background']})")
+    print(f"[sway-theme] style omarchy ({LAYOUT}): Omarchy theme '{name}' rendered for sway (accent {c['accent']}, background {c['background']})")
     return 0
 
 

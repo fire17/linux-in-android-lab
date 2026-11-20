@@ -3,4 +3,7 @@
     <string name="ld_gestures">מחוות שולחן עבודה (לחיצה ארוכה = קליק ימני, 2 אצבעות = גלילה, החלקה ב-3 אצבעות = שולחן עבודה)</string>
     <string name="ld_gestures_on">מחוות שולחן עבודה: פועל</string>
     <string name="ld_gestures_off">מחוות שולחן עבודה: כבוי</string>
+    <string name="ld_magnifier">זכוכית מגדלת (צביטה = הגדלה, 2 אצבעות = הזזה, הקשה כפולה ב-2 אצבעות = 1:1)</string>
+    <string name="ld_magnifier_on">זכוכית מגדלת: פועל</string>
+    <string name="ld_magnifier_off">זכוכית מגדלת: כבוי</string>
 </resources>

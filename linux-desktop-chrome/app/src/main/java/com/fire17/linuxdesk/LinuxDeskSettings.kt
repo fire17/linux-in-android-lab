@@ -91,6 +91,22 @@ class LinuxDeskSettings(context: Context) {
         get() = p.getBoolean("camera_relay_only", false)
         set(v) = p.edit().putBoolean("camera_relay_only", v).apply()
 
+    /**
+     * Magnifier (x11/Magnifier, Tami 2026-11-20 01:38: "zoom like a magnifying glass, not a resolution change"): a
+     * 2-finger pinch on the display zooms the picture with lorie's renderer zoom, the X resolution stays the same.
+     * null = never set = the default for the session's desktop, see [magnifierOn]. Live from the display's menu.
+     */
+    var magnifier: Boolean?
+        get() = if (p.contains("magnifier")) p.getBoolean("magnifier", false) else null
+        set(v) = p.edit().apply { if (v == null) remove("magnifier") else putBoolean("magnifier", v) }.apply()
+
+    /**
+     * Default ON for sway (Tami asked for it there; nothing else pinches on sway, which ignores lorie's touches).
+     * Default OFF for i3: there a pinch is Chromium's own page zoom (it gets lorie's raw touches), which the magnifier
+     * would take away; turning it on there trades page pinch-zoom for the magnifier. A recommendation; Tami decides.
+     */
+    fun magnifierOn(sway: Boolean): Boolean = magnifier ?: sway
+
     /** Off by default: inside proot there is no GPU device, so Chromium uses software compositing. */
     var useGpu: Boolean
         get() = p.getBoolean("useGpu", true)   // Tami 2026-11-20: GPU on by default; a GPU crash pins software (0.2.26)

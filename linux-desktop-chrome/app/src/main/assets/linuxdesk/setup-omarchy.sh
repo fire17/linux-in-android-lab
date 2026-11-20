@@ -234,8 +234,12 @@ apps_main() {
 # `setup-omarchy.sh sway`. Not under `set -e` (it runs in a `||` list), so every step checks for itself.
 # `sway_main wait` (the `sway` subcommand) waits up to 20 min for memory like the apps stage; the first-run setup only
 # checks once and skips (it must not hold the setup screen for 20 minutes).
-SWAY_REV=1
+SWAY_REV=2
 SWAY_PKGS="sway waybar foot mako xorg-xwayland swaybg wofi"
+# The end4 look (sway-theme.py, /etc/linuxdesk/sway-style): matugen (palette from the wallpaper), nwg-dock (Mac dock),
+# swaync (notifications), inter-font. All in ALARM (notes/gallery/_alarm/names.txt, 2026-11-20). Optional: installed
+# after the core set, never part of the missing-check below; the theme falls back (baked palette, waybar dock, mako).
+SWAY_EXTRA_PKGS="matugen nwg-dock swaync inter-font"
 sway_main() {
   [ "$(cat "$MARK/desktop" 2>/dev/null || true)" = sway ] || return 0
   [ "$(cat "$MARK/sway-v1" 2>/dev/null || true)" = "$SWAY_REV" ] && { log "sway: already installed"; return 0; }
@@ -258,6 +262,8 @@ sway_main() {
   # shellcheck disable=SC2086  # one package name per word, intended
   pacman -S --needed --noconfirm $SWAY_PKGS || { sleep 3; pacman -Syy --noconfirm; pacman -S --needed --noconfirm $SWAY_PKGS; } \
     || log "sway: pacman reported errors (often harmless hook failures under PRoot); verifying ..."
+  # shellcheck disable=SC2086
+  pacman -S --needed --noconfirm $SWAY_EXTRA_PKGS || log "sway: optional end4 packages not all installed (fallbacks are used)"
   pacman -Scc --noconfirm >/dev/null 2>&1 || true
   missing=""
   for b in sway waybar foot mako swaybg wofi Xwayland; do command -v "$b" >/dev/null 2>&1 || missing="$missing $b"; done

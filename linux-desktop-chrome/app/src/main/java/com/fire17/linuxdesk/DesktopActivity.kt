@@ -37,7 +37,10 @@ import com.termux.x11.MainActivity
  *    arrows), sent as real X key events through LorieView.sendKeyEvent; shown by default, hidden/shown from the
  *    long-press menu (remembered),
  *  - desktop gestures (x11/DesktopGestures: long-press = right click, 2-finger drag = scroll wheel, 3-finger
- *    horizontal swipe = i3 workspace), which see every touch before lorie; on by default, a long-press menu switch.
+ *    horizontal swipe = workspace; on sway one finger is a mouse: tap = click, drag = wheel, long-press-drag = move
+ *    the window), which see every touch before lorie; on by default, a long-press menu switch,
+ *  - the magnifier (x11/Magnifier: pinch = lorie's renderer zoom, X resolution unchanged; default ON on sway, OFF on
+ *    i3, see LinuxDeskSettings.magnifier), a long-press menu switch.
  */
 class DesktopActivity : MainActivity(), SessionBus.Listener {
 
@@ -72,6 +75,7 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
 
     override fun onPause() {
         keyBar?.keys?.releaseAll()   // never leave Super/Ctrl/... held down in X while the display is not shown
+        gestures?.release()          // the same for a window move in progress (Super + button 1)
         super.onPause()
     }
 
@@ -152,13 +156,42 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
             mouse = { x, y, b, down, rel -> v.sendMouseEvent(x, y, b, down, rel) },
             wheel = { dx, dy -> v.sendMouseWheelEvent(dx, dy) },
             key = { code, down -> v.sendKeyEvent(0, code, down) },
-            pass = { e -> super.dispatchTouchEvent(e) })
+            pass = { e -> super.dispatchTouchEvent(e) },
+            lens = lens(v))
         g.enabled = gesturesOn()
+        // Sway ignores lorie's XI2 touches (Tami 01:38: "I still can't click"), so one finger is a mouse there.
+        g.pointerMode = swaySession()
+        g.magnifier = magnifierOn()
         // Buttons over the display (keyboard button, lorie's extra keys) are skipped by DesktopGestures itself;
         // the key bar's modifiers are touch-listener views, not clickable ones, so it is named here.
         g.covered = { x, y -> hits(keyBar, x, y) }
         gestures = g
     }
+
+    /**
+     * True if this session runs sway: Omarchy with the sway desktop chosen and its packages installed (otherwise
+     * start-sway.sh runs i3 instead). The desktop is fixed for the session (the launcher locks it while running).
+     * Not detected: sway installed but failing to come up within 10 s, when start-sway.sh also falls back to i3.
+     */
+    private fun swaySession(): Boolean =
+        com.fire17.linuxdesk.linux.Distro.current(this) == com.fire17.linuxdesk.linux.Distro.OMARCHY &&
+            com.fire17.linuxdesk.linux.Desktop.current(this) == com.fire17.linuxdesk.linux.Desktop.SWAY &&
+            java.io.File(com.fire17.linuxdesk.linux.Distro.OMARCHY.rootfsDir(this),
+                com.fire17.linuxdesk.linux.Desktop.SWAY_MARKER).isFile
+
+    /** LorieView's public renderer zoom API (lorie @a00942e) for the magnifier. */
+    private fun lens(v: com.termux.x11.LorieView) = object : com.fire17.linuxdesk.x11.Magnifier.Lens {
+        override fun viewport() = v.inputViewport.let {
+            com.fire17.linuxdesk.x11.Magnifier.Box(it.left.toFloat(), it.top.toFloat(), it.width().toFloat(), it.height().toFloat())
+        }
+        override fun shown() = v.inputSourceRect.let { com.fire17.linuxdesk.x11.Magnifier.Box(it.left, it.top, it.width(), it.height()) }
+        override fun zoomBy(factor: Float) = v.adjustRendererZoomByFactor(factor)
+        override fun pin(sourceX: Float, sourceY: Float, fracX: Float, fracY: Float) =
+            v.setPinchZoomFocus(sourceX, sourceY, fracX, fracY)
+        override fun reset() { v.resetRendererZoom(); v.clearPinchZoomFocus() }
+    }
+
+    private fun magnifierOn() = LinuxDeskSettings(this).magnifierOn(swaySession())
 
     private fun hits(view: View?, x: Float, y: Float): Boolean {
         if (view == null || view.visibility != View.VISIBLE || !view.isAttachedToWindow) return false
@@ -189,6 +222,7 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
             isChecked = com.fire17.linuxdesk.audio.SoundSwitch.isOn(this@DesktopActivity)
         }
         m.menu.add(0, 7, 6, R.string.ld_gestures).apply { isCheckable = true; isChecked = gesturesOn() }
+        m.menu.add(0, 8, 7, R.string.ld_magnifier).apply { isCheckable = true; isChecked = magnifierOn() }
         m.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> SessionService.start(this, SessionService.ACTION_RESTART_BROWSER)
@@ -206,6 +240,13 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_GESTURES, on).apply()
                     gestures?.enabled = on
                     android.widget.Toast.makeText(this, if (on) R.string.ld_gestures_on else R.string.ld_gestures_off,
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
+                8 -> {
+                    val on = !magnifierOn()
+                    LinuxDeskSettings(this).magnifier = on   // explicit choice from now on (also on the other desktop)
+                    gestures?.magnifier = on
+                    android.widget.Toast.makeText(this, if (on) R.string.ld_magnifier_on else R.string.ld_magnifier_off,
                         android.widget.Toast.LENGTH_SHORT).show()
                 }
             }

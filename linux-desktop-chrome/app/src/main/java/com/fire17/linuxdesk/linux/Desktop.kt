@@ -8,6 +8,8 @@ import android.content.Context
  *
  *   I3    start-omarchy.sh  i3 on lorie X11. The DEFAULT, unchanged from every earlier build.
  *   SWAY  start-sway.sh     sway (wlroots x11 backend, pixman) + waybar. Experimental, opt-in from the launcher.
+ *                           The display then turns one finger into a mouse (x11/DesktopGestures.pointerMode): sway
+ *                           does not act on lorie's XI2 touches.
  *
  * The choice is written to the guest's /etc/linuxdesk/desktop (i3|sway) before setup runs, so setup-omarchy.sh
  * installs the sway packages only for sway users.

@@ -4,4 +4,8 @@
     <string name="ld_gestures">Desktop gestures (long-press = right click, 2 fingers = scroll, 3-finger swipe = workspace)</string>
     <string name="ld_gestures_on">Desktop gestures: ON</string>
     <string name="ld_gestures_off">Desktop gestures: OFF</string>
+    <!-- Magnifier (x11/Magnifier): pinch = zoom the picture, X resolution unchanged. -->
+    <string name="ld_magnifier">Magnifier (pinch = zoom, 2 fingers = pan, 2-finger double-tap = 1:1)</string>
+    <string name="ld_magnifier_on">Magnifier: ON</string>
+    <string name="ld_magnifier_off">Magnifier: OFF</string>
 </resources>

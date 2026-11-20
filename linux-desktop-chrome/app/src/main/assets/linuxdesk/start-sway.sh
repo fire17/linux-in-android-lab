@@ -52,7 +52,8 @@ cmp -s /opt/linuxdesk/omarchy/bwrap-shim.sh /usr/local/bin/bwrap 2>/dev/null \
 # sway exists, so a missing sway-v1 marker here means only a newer SWAY_REV (configs) is pending. Both share one
 # background job: two pacman runs at once would fight over pacman's lock.
 SWAYPKG=0
-if [ "$(cat /etc/linuxdesk/sway-v1 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then SWAYPKG=1; fi
+# 2 = setup-omarchy.sh's SWAY_REV (2: the end4 extras matugen nwg-dock swaync inter-font); keep the two in step.
+if [ "$(cat /etc/linuxdesk/sway-v1 2>/dev/null)" != 2 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then SWAYPKG=1; fi
 APPS=0
 if [ "$(cat /etc/linuxdesk/omarchy-stage-8 2>/dev/null)" != 1 ] && [ -f /opt/linuxdesk/setup-omarchy.sh ]; then
   APPS=1; echo "[sway] installing Omarchy's apps in the background (log: /etc/linuxdesk/omarchy-apps.log)"
