@@ -125,7 +125,7 @@ class SessionService : Service() {
                     SessionBus.setState(SessionBus.snapshot.state, SessionBus.snapshot.message)
                 }
             }
-            ACTION_RESTART_BROWSER -> Thread({ restartBrowser() }, "LinuxDeskRestart").start()
+            ACTION_RESTART_BROWSER -> Thread({ if (!requestBrowserInDesktop()) restartBrowser() }, "LinuxDeskRestart").start()
             ACTION_STOP -> stopSession()
             ACTION_MIC_OFF -> { MicIn.setConsent(false); micOff(); SessionBus.notifyMicChanged() }
             ACTION_MIC_APPLY -> if (MicIn.consent) Thread({ micOn() }, "LinuxDeskMicOn").start() else micOff()
@@ -256,8 +256,12 @@ class SessionService : Service() {
             // Chromium's parent with the SAME flags (CDP over a pipe), and returns true. Genie access OFF, or any
             // genie failure: false, and the proven start-browser.sh path below runs exactly as before.
             val flags = browserFlags()
+            // Tami 11:02: "I want the actual OS to be fully active" -- an Omarchy flavour with "Open Chrome at Start"
+            // OFF boots its desktop, not Chrome, also with Genie on: deskd then starts WITHOUT the browser (shell,
+            // screen and input verbs stay; browser.* is unavailable until the person opens Chrome).
+            val genieBrowserFlags = if (distro.isArch && !settings.openBrowserAtStart) null else flags
             val genieOwnsBrowser = try {
-                GenieRuntime.start(this, proot, flags, USE_SYSVIPC)
+                GenieRuntime.start(this, proot, genieBrowserFlags, USE_SYSVIPC)
             } catch (t: Throwable) {
                 Log.e(TAG, "genie start failed", t)
                 SessionBus.log("genie: start failed (${t.javaClass.simpleName}); using the normal browser path")
@@ -309,7 +313,10 @@ class SessionService : Service() {
         SessionBus.browserWindowUp = false
 
         // PulseHost.guestEnv() is empty when PulseAudio is not running, so Chromium then starts exactly as before.
-        val p = proot.start(listOf(proot.startScript) + flags, listOf("DISPLAY=:0") + PulseHost.guestEnv() + GpuSession.guestEnv(), sysvipc = USE_SYSVIPC)
+        // LINUXDESK_OPEN_BROWSER: the Omarchy start scripts start Chrome only when 1 (launcher "Open Chrome at Start",
+        // default OFF); otherwise they report the desktop itself as LINUXDESK_WINDOW_UP and hold. Alpine ignores it.
+        val open = "LINUXDESK_OPEN_BROWSER=" + if (settings.openBrowserAtStart) "1" else "0"
+        val p = proot.start(listOf(proot.startScript) + flags, listOf("DISPLAY=:0", open) + PulseHost.guestEnv() + GpuSession.guestEnv(), sysvipc = USE_SYSVIPC)
         browser = p
         Thread({
             try {
@@ -334,6 +341,28 @@ class SessionService : Service() {
             }
         }, "LinuxDeskBrowserLog").apply { isDaemon = true; start() }
         updateNotification()
+    }
+
+    /**
+     * Omarchy flavours: the desktop is the session, not Chrome (the start scripts hold while the compositor lives), so
+     * "Restart browser" asks the running desktop for a browser by creating /tmp/linuxdesk-open-browser in the rootfs;
+     * the script's hold loop opens Chrome within ~2 s and deletes the file. False = no desktop session to ask (Alpine,
+     * or the session script is gone): the caller restarts the session's browser as before.
+     */
+    private fun requestBrowserInDesktop(): Boolean {
+        if (stopping || !sessionDistro.isArch) return false
+        // Genie ON: deskd is Chromium's parent (CDP pipe), so its own restart path stays (GenieRuntime.restartBrowser).
+        if (GenieRuntime.ownsBrowser || browser?.isAlive != true) return false
+        return try {
+            val f = java.io.File(sessionDistro.rootfsDir(this), "tmp/linuxdesk-open-browser")
+            f.parentFile?.mkdirs()
+            f.writeText("1\n")
+            SessionBus.log("restart browser: asked the desktop to open Chrome (/tmp/linuxdesk-open-browser)")
+            true
+        } catch (t: Throwable) {
+            SessionBus.log("restart browser: could not write the open-browser trigger (${t.javaClass.simpleName})")
+            false
+        }
     }
 
     private fun restartBrowser() {

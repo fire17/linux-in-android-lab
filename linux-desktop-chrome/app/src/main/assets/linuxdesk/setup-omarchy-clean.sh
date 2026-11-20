@@ -133,7 +133,12 @@ hypr_stack() {
     log "hypr-stack: downloading the omarchy-android v0.1.1 bundle (1.18 GB, resumable)"
     curl -fL --retry 3 -C - -o "$B" "$HS_URL" || { log "hypr-stack: download failed (Retry resumes it)"; return 1; }
   fi
-  echo "$HS_SHA  $B" | sha256sum -c - >/dev/null || { log "hypr-stack: bundle sha256 mismatch; deleting it"; rm -f "$B"; return 1; }
+  # Delete only on a real mismatch. Under PRoot sha256sum can itself fail ("Function not implemented", seen on Tami's
+  # phone 10:55): that used to delete a good 1.18 GB bundle. A failed hash run keeps the file and retries next Start.
+  got=$(sha256sum "$B" 2>/dev/null | awk '{print $1}')
+  if [ -z "$got" ]; then got=$(sha256sum "$B" 2>/dev/null | awk '{print $1}'); fi
+  if [ -z "$got" ]; then log "hypr-stack: could not hash the bundle this time; keeping it, the next Start checks again"; return 1; fi
+  [ "$got" = "$HS_SHA" ] || { log "hypr-stack: bundle sha256 mismatch; deleting it"; rm -f "$B"; return 1; }
   log "hypr-stack: bundle sha256 OK; extracting the Hyprland stack only (nice 19, single-thread xz)"
   mem_gate
   T=$dl/hs.tmp; rm -rf "$T"; mkdir -p "$T"

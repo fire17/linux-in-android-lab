@@ -340,6 +340,7 @@ class Browser(object):
             if k.startswith("LINUXDESK_") and k not in ("LINUXDESK_DPI", "LINUXDESK_DENSITY"):
                 env.pop(k)
         env["LINUXDESK_GENIE"] = "0"     # never let start-browser.sh's legacy block open port 9222
+        env["LINUXDESK_OPEN_BROWSER"] = "1"   # deskd launches the browser for its CDP pipe: the Omarchy scripts must open it
         return env
 
     def _launch_pipe(self):

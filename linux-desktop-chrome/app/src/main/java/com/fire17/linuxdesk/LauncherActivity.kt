@@ -117,6 +117,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             })
             swayBox.isEnabled = id == R.id.distro_omarchy
             updateHyprBox(id == R.id.distro_omarchy)
+            showOpenBrowserBox(id != R.id.distro_alpine)
         }
 
         val url = findViewById<EditText>(R.id.url)
@@ -158,6 +159,9 @@ class LauncherActivity : Activity(), SessionBus.Listener {
 
         bindCheck(R.id.opt_auto_kbd, settings.autoKeyboard) { settings.autoKeyboard = it }
         bindCheck(R.id.opt_legacy, settings.legacyDrawing) { settings.legacyDrawing = it }
+        // Omarchy flavours only (Alpine always runs its browser); read by SessionService at the next Start.
+        bindCheck(R.id.opt_open_browser, settings.openBrowserAtStart) { settings.openBrowserAtStart = it }
+        showOpenBrowserBox(Distro.current(this).isArch)
         bindCheck(R.id.opt_noseccomp, settings.prootNoSeccomp) { settings.prootNoSeccomp = it }
         bindCheck(R.id.opt_stream_install, settings.streamInstall) { settings.streamInstall = it }
         bindCheck(R.id.opt_gpu, settings.useGpu) {
@@ -343,6 +347,10 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         val pinned = settings.useGpu && settings.gpuCrashed
         findViewById<Button>(R.id.btn_gpu_retry).visibility = if (pinned) View.VISIBLE else View.GONE
         findViewById<TextView>(R.id.gpu_hint).setText(if (pinned) R.string.ld_gpu_pinned else R.string.ld_gpu_hint)
+    }
+
+    private fun showOpenBrowserBox(arch: Boolean) {
+        findViewById<View>(R.id.opt_open_browser).visibility = if (arch) View.VISIBLE else View.GONE
     }
 
     private fun bindCheck(id: Int, value: Boolean, set: (Boolean) -> Unit) {

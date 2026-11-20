@@ -31,6 +31,7 @@
 
     <string name="ld_opt_auto_kbd">המקלדת תקפוץ כשנוגעים בשדה טקסט בדף (ניסיוני)</string>
     <string name="ld_opt_legacy">ציור במצב ישן (legacy). כדאי לנסות אם המסך נשאר שחור</string>
+    <string name="ld_opt_open_browser">לפתוח את Chrome בהפעלה (כבוי = רק שולחן העבודה; פותחים את Chrome מהמעגן או מ"הפעל דפדפן מחדש")</string>
     <string name="ld_opt_noseccomp">מצב PRoot איטי ובטוח (PROOT_NO_SECCOMP=1)</string>
     <string name="ld_opt_stream_install">התקנת Omarchy מהירה: הורדה ופריסה במעבר אחד (כבוי = שומר את הקובץ, אפשר להמשיך הורדה)</string>
     <string name="ld_opt_gpu">לאפשר GPU ב-Chromium (בדרך כלל אין לזה השפעה בתוך PRoot)</string>

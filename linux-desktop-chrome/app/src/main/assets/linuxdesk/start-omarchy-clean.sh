@@ -39,7 +39,7 @@ while [ ! -e /tmp/.X11-unix/X0 ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i + 1)); d
 
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
-[ -n "$BIN" ] || { say "no browser installed (setup-omarchy-clean.sh did not finish?)"; exit 127; }
+[ -n "$BIN" ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ] || { say "no browser installed (setup-omarchy-clean.sh did not finish?)"; exit 127; }
 
 # The app refreshes /opt/linuxdesk every Start: put the current shims in place (systemctl, uwsm, sudo, systemd-cat).
 sh /opt/linuxdesk/clean/install-shims.sh || say "note: the PRoot shims could not be refreshed"
@@ -155,6 +155,24 @@ try_hyprland() {
   # hyprctl / Wayland env for the rest of this script (the watcher and Chrome).
   export WAYLAND_DISPLAY=$(ls "$RT" | grep -E '^wayland-[0-9]+$' | head -n 1)
   hyprctl() { LD_LIBRARY_PATH=$LDP "$HS/hyprland/bin/hyprctl" "$@"; }
+  # Tami 11:02 ("not launch Chrome automatically ... I want the actual OS to be fully active"): without
+  # LINUXDESK_OPEN_BROWSER=1 the desktop is the session: RUNNING now, hold while Hyprland lives; the app's
+  # "Restart browser" touches $TRIGGER and Chrome opens here with the same flags (start-hyprland.sh's contract).
+  if [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ]; then
+    TRIGGER=${LINUXDESK_BROWSER_TRIGGER:-/tmp/linuxdesk-open-browser}
+    rm -f "$TRIGGER"
+    echo "LINUXDESK_WINDOW_UP ${W}x${Hh}"
+    say "clean: desktop up without a browser (LINUXDESK_OPEN_BROWSER=0)"
+    while kill -0 $HPID 2>/dev/null; do
+      if [ -e "$TRIGGER" ]; then
+        rm -f "$TRIGGER"
+        [ -n "$BIN" ] && { "$BIN" --ozone-platform=wayland "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
+          say "opened $BIN on request ($TRIGGER)"; }
+      fi
+      sleep 2
+    done
+    cleanup; say "Hyprland exited"; exit 0
+  fi
   echo "[omarchy] exec $BIN --ozone-platform=wayland (Hyprland)"
   watch_window hyprctl
   # Chrome runs as root like on the other two distros (deskd's CDP pipe and flags unchanged), as a Wayland client.
@@ -188,6 +206,7 @@ try_sway() {
 # ---------------------------------------------------------------------------------------------------------------- C
 chrome_alone() {
   say "clean: no compositor came up; Chrome alone on X11 (Stop and Start again to retry the desktop)"
+  [ -n "$BIN" ] || { say "no browser installed either"; exit 127; }
   watch_window xdotool
   "$BIN" --ozone-platform=x11 --start-maximized "$@"
   CODE=$?

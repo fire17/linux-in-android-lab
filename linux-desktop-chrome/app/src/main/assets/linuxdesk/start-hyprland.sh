@@ -64,7 +64,7 @@ say "memory gate OK (MemAvailable $((ma / 1024)) MB, SwapFree $((sf / 1024)) MB)
 # ---- 2. what must exist -----------------------------------------------------------------------------------------------
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
-if [ -z "$BIN" ]; then
+if [ -z "$BIN" ] && [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
   say "no browser installed (setup-omarchy.sh did not finish?)"
   exit 127
 fi
@@ -380,17 +380,50 @@ if [ $CODE -ne 0 ] && [ $(( $(date +%s) - T0 )) -lt 10 ] && kill -0 "$WATCH" 2>/
   fi
 fi
 }
+# The app's "Restart browser" (and anything else) asks for a browser by touching $TRIGGER; the hold loop below opens it
+# inside the running Hyprland (through the compositor, so it gets Hyprland's env) with run_chrome's flags.
+TRIGGER=${LINUXDESK_BROWSER_TRIGGER:-/tmp/linuxdesk-open-browser}
+rm -f "$TRIGGER"
+BARGS=""; GL=0
+for a in "$@"; do
+  case "$a" in
+    --window-position=*|--window-size=*|--start-maximized|--ozone-platform=*) continue ;;
+    --use-gl=*|--disable-gpu) GL=1 ;;
+  esac
+  BARGS="$BARGS '$(printf %s "$a" | sed "s/'/'\\\\''/g")'"
+done
+[ "$GL" = 1 ] || BARGS=" --disable-gpu$BARGS"
+open_browser() {
+  rm -f "$TRIGGER"
+  [ -n "$BIN" ] || { say "note: no browser installed to open"; return 0; }
+  hyprctl eval "hl.exec_cmd([[$BIN --ozone-platform=wayland$BARGS > /tmp/linuxdesk-browser.log 2>&1]])" >/dev/null 2>&1 \
+    && say "opened $BIN on request ($TRIGGER)" || say "note: could not open $BIN on request"
+}
+
+# Tami 11:02: "Can we please not launch Chrome automatically, or at least have a toggle for it? I want the actual OS to
+# be fully active." Default: no browser; the desktop is the session and the app shows RUNNING once Hyprland answers.
+# LINUXDESK_OPEN_BROWSER=1 (launcher "Open Chrome at Start") keeps the Chrome-first start below.
+CODE=0
+if [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
 NOWINDOW=0
 run_chrome "$@"
 [ "$NOWINDOW" = 1 ] && fallback "$BIN never showed a window on Hyprland (code $CODE)" "$@"
 say "$BIN exited with code $CODE"
+else
+  echo "LINUXDESK_WINDOW_UP ${W}x${H}"
+  say "desktop up without a browser (LINUXDESK_OPEN_BROWSER=0); open $BIN from the dock or the app"
+fi
 # Tami 06:49: "every time we closed Chrome it didn't hold the desktop by itself and tried to open the browser again".
 # Closing Chrome used to end this script, so the app tore the session down and restarted it (browser first). Hyprland
 # is the session now: it stays up until it exits itself (Super+Shift+E / logout) or the app's Stop kills us; the dock
-# and the app launcher reopen Chrome. LINUXDESK_HYPR_HOLD=0 keeps the old Chrome-is-the-session behaviour.
-if [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] && kill -0 "$HPID" 2>/dev/null; then
+# and the app launcher reopen Chrome. LINUXDESK_HYPR_HOLD=0 keeps the old Chrome-is-the-session behaviour (only with
+# a browser at start: without one there is nothing else to be the session).
+if { [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ]; } && kill -0 "$HPID" 2>/dev/null; then
   say "the desktop stays up without $BIN (Hyprland pid $HPID); reopen it from the dock"
-  while kill -0 "$HPID" 2>/dev/null; do sleep 2; done
+  while kill -0 "$HPID" 2>/dev/null; do
+    [ -e "$TRIGGER" ] && open_browser
+    sleep 2
+  done
   say "Hyprland exited"
   CODE=0
 fi

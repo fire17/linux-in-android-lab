@@ -24,7 +24,7 @@ while [ ! -e /tmp/.X11-unix/X0 ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i + 1)); d
 
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
-if [ -z "$BIN" ]; then
+if [ -z "$BIN" ] && [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
   echo "[omarchy] no browser installed (setup-omarchy.sh did not finish?)"
   exit 127
 fi
@@ -119,6 +119,29 @@ if command -v i3 >/dev/null 2>&1 && ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/de
 else
   echo "[omarchy] i3 already running or not installed; starting the browser alone"
 fi
+
+# Tami 11:02: "Can we please not launch Chrome automatically, or at least have a toggle for it? I want the actual OS to
+# be fully active." Default (LINUXDESK_OPEN_BROWSER=0): no browser; once i3 owns the screen the app shows RUNNING and
+# i3 is the session until it exits (logout) or the app's Stop. The app's "Restart browser" touches $TRIGGER: Chrome
+# opens with the same flags (started from here, not `i3-msg exec`: the argv stays exact). Without i3 there is no
+# desktop to hold, so the browser starts as before.
+TRIGGER=${LINUXDESK_BROWSER_TRIGGER:-/tmp/linuxdesk-open-browser}
+rm -f "$TRIGGER"
+if [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ] && [ -n "$I3" ] && kill -0 "$I3" 2>/dev/null; then
+  echo "LINUXDESK_WINDOW_UP $(xdotool getdisplaygeometry 2>/dev/null | tr ' ' x)"
+  echo "[omarchy] desktop up without a browser (LINUXDESK_OPEN_BROWSER=0; i3 pid $I3)"
+  while kill -0 "$I3" 2>/dev/null; do
+    if [ -e "$TRIGGER" ]; then
+      rm -f "$TRIGGER"
+      [ -n "$BIN" ] && { "$BIN" "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
+        echo "[omarchy] opened $BIN on request ($TRIGGER)"; }
+    fi
+    sleep 2
+  done
+  echo "[omarchy] i3 exited"
+  exit 0
+fi
+[ -n "$BIN" ] || { echo "[omarchy] no browser installed and no i3 to hold the desktop"; exit 127; }
 
 # LINUXDESK_WINDOW_UP: the app shows RUNNING when the first browser window is viewable.
 (

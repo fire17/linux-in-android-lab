@@ -6,7 +6,7 @@
 # shell comes up with the phone plugins: status bar, home screens, app drawer, switcher, back edge, quick settings.
 #
 # Like a phone, the session opens on the HOME SCREEN: Chrome is NOT started (it is in the app drawer, with LinuxDesk's
-# flags in ~/.config/chrome-flags.conf). LINUXDESK_OMAMOBILE_CHROME=1 starts it as well, start-hyprland.sh style.
+# flags in ~/.config/chrome-flags.conf). LINUXDESK_OPEN_BROWSER=1 starts it as well, start-hyprland.sh style.
 # The session holds until Hyprland exits (or the app's Stop); same argv contract as every start script (browser flags +
 # URL, ChromiumFlags.kt), used for the drawer's Chrome flags and for the never-black fallback (Chrome alone on X11).
 #
@@ -18,7 +18,7 @@
 #
 # Knobs: LINUXDESK_OMAMOBILE_SCALE (default 2), LINUXDESK_OMAMOBILE_PORTRAIT=0 (use the whole display when it is
 # landscape), LINUXDESK_WESTON_RENDERER (gl = start-hyprland.sh's proven zink path, default; pixman),
-# LINUXDESK_OMAMOBILE_CHROME=1, LINUXDESK_HYPR_HOLD=0 (end with Chrome, the old contract).
+# LINUXDESK_OPEN_BROWSER=1 (or LINUXDESK_OMAMOBILE_CHROME=1), LINUXDESK_HYPR_HOLD=0 (end with Chrome, the old contract).
 # Test hooks as start-hyprland.sh: LINUXDESK_DIR, LINUXDESK_HYPR_ROOT, LINUXDESK_HYPR_RT, LINUXDESK_MEMINFO,
 # LINUXDESK_HYPR_WAIT.
 export DISPLAY="${DISPLAY:-:0}"
@@ -242,19 +242,31 @@ command -v omamobile-osk-guard >/dev/null 2>&1 \
 WATCH=$!
 
 CODE=0
-if [ "${LINUXDESK_OMAMOBILE_CHROME:-0}" = 1 ] && [ -n "$BIN" ]; then
+# Tami 11:02 ("not launch Chrome automatically ... I want the actual OS to be fully active"): the browser starts only
+# with LINUXDESK_OPEN_BROWSER=1 (launcher "Open Chrome at Start"; LINUXDESK_OMAMOBILE_CHROME=1 is the older name).
+[ "${LINUXDESK_OMAMOBILE_CHROME:-0}" = 1 ] && LINUXDESK_OPEN_BROWSER=1
+if [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ] && [ -n "$BIN" ]; then
   WL=$(ls "$RT" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -n 1)
-  say "LINUXDESK_OMAMOBILE_CHROME=1: starting $BIN as well"
+  say "LINUXDESK_OPEN_BROWSER=1: starting $BIN as well"
   # Flags from ~/.config/chrome-flags.conf (written above); as desk, like a drawer launch.
   # shellcheck disable=SC2086
   XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=${WL:-wayland-1} $AS env HOME="$UH" "$BIN"
   CODE=$?
 fi
 # Hold: the phone shell IS the session (start-hyprland.sh's LINUXDESK_HYPR_HOLD block). It stays up until Hyprland
-# exits or the app's Stop kills us (proot --kill-on-exit ends the rest).
-if [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] && kill -0 "$HPID" 2>/dev/null; then
+# exits or the app's Stop kills us (proot --kill-on-exit ends the rest). The app's "Restart browser" touches $TRIGGER:
+# Chrome opens through the compositor (as desk, flags from ~/.config/chrome-flags.conf, like a drawer launch).
+TRIGGER=${LINUXDESK_BROWSER_TRIGGER:-/tmp/linuxdesk-open-browser}
+if { [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ]; } && kill -0 "$HPID" 2>/dev/null; then
   say "the phone shell holds the session (Hyprland pid $HPID); Chrome is in the app drawer"
-  while kill -0 "$HPID" 2>/dev/null; do sleep 2; done
+  rm -f "$TRIGGER"
+  while kill -0 "$HPID" 2>/dev/null; do
+    if [ -e "$TRIGGER" ]; then
+      rm -f "$TRIGGER"
+      [ -n "$BIN" ] && hx "$BIN > /tmp/omamobile-chrome.log 2>&1" && say "opened $BIN on request ($TRIGGER)"
+    fi
+    sleep 2
+  done
   say "Hyprland exited"
   CODE=0
 fi

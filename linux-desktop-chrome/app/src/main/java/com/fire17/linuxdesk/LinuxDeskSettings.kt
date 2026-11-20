@@ -26,6 +26,15 @@ class LinuxDeskSettings(context: Context) {
         get() = p.getBoolean("autoKeyboard", true)
         set(v) = p.edit().putBoolean("autoKeyboard", v).apply()
 
+    /**
+     * Omarchy flavours only: start Chrome together with the desktop (LINUXDESK_OPEN_BROWSER=1 for the start script).
+     * Default OFF (Tami 11:02: "Can we please not launch Chrome automatically, or at least have a toggle for it? I want
+     * the actual OS to be fully active."): the desktop / phone home screen is the session. Alpine always runs its browser.
+     */
+    var openBrowserAtStart: Boolean
+        get() = p.getBoolean("openBrowserAtStart", false)
+        set(v) = p.edit().putBoolean("openBrowserAtStart", v).apply()
+
     /** Passes -legacy-drawing to lorie (upstream's documented fix for a black screen). */
     var legacyDrawing: Boolean
         get() = p.getBoolean("legacyDrawing", false)

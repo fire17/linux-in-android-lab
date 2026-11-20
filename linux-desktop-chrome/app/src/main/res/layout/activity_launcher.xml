@@ -230,6 +230,12 @@
             android:text="@string/ld_opt_legacy" />
 
         <CheckBox
+            android:id="@+id/opt_open_browser"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ld_opt_open_browser" />
+
+        <CheckBox
             android:id="@+id/opt_noseccomp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -31,7 +31,7 @@ while [ ! -e /tmp/.X11-unix/X0 ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i + 1)); d
 
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
-if [ -z "$BIN" ]; then
+if [ -z "$BIN" ] && [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
   echo "[sway] no browser installed (setup-omarchy.sh did not finish?)"
   exit 127
 fi
@@ -150,6 +150,11 @@ while [ "$n" -gt 0 ]; do
 done
 [ "$GL" = 1 ] || { set -- --disable-gpu "$@"; echo "[sway] GPU mode off: added --disable-gpu"; }
 
+# Tami 11:02: "Can we please not launch Chrome automatically, or at least have a toggle for it? I want the actual OS to
+# be fully active." Default: no browser, the desktop is the session (RUNNING as soon as sway answers, above).
+# LINUXDESK_OPEN_BROWSER=1 (launcher "Open Chrome at Start") keeps the Chrome-first start below.
+CODE=0; WATCH=""
+if [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
 # LINUXDESK_WINDOW_UP: the app shows RUNNING when the first browser window is in sway's tree.
 (
   j=0
@@ -181,13 +186,29 @@ if [ $CODE -ne 0 ] && [ $(( $(date +%s) - T0 )) -lt 10 ] && kill -0 "$WATCH" 2>/
     echo "[sway] $BIN exited with code $CODE on Wayland; no XWayland display (xwayland disabled in the config?)"
   fi
 fi
-kill "$WATCH" "$FIT" 2>/dev/null
+kill "$WATCH" 2>/dev/null
 echo "[sway] $BIN exited with code $CODE"
+else
+  echo "LINUXDESK_WINDOW_UP $(xdotool getdisplaygeometry 2>/dev/null | tr ' ' x)"
+  echo "[sway] desktop up without a browser (LINUXDESK_OPEN_BROWSER=0); open it from the dock or the app"
+fi
+kill "$FIT" 2>/dev/null
 # Tami 06:49: closing Chrome must not take the desktop down. sway stays up until it exits itself (logout) or the app's
-# Stop; the dock reopens Chrome. LINUXDESK_SWAY_HOLD=0 keeps the old Chrome-is-the-session behaviour.
-if [ "${LINUXDESK_SWAY_HOLD:-1}" = 1 ] && kill -0 "$SWAY" 2>/dev/null; then
+# Stop; the dock reopens Chrome. LINUXDESK_SWAY_HOLD=0 keeps the old Chrome-is-the-session behaviour (only with a
+# browser at start). The app's "Restart browser" touches $TRIGGER: Chrome opens again with the same flags, a Wayland
+# client of sway (started from here, not `swaymsg exec`: the argv stays exact, no re-quoting through sway's parser).
+TRIGGER=${LINUXDESK_BROWSER_TRIGGER:-/tmp/linuxdesk-open-browser}
+rm -f "$TRIGGER"
+if { [ "${LINUXDESK_SWAY_HOLD:-1}" = 1 ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ]; } && kill -0 "$SWAY" 2>/dev/null; then
   echo "[sway] the desktop stays up without $BIN (sway pid $SWAY); reopen it from the dock"
-  while kill -0 "$SWAY" 2>/dev/null; do sleep 2; done
+  while kill -0 "$SWAY" 2>/dev/null; do
+    if [ -e "$TRIGGER" ]; then
+      rm -f "$TRIGGER"
+      [ -n "$BIN" ] && { "$BIN" --ozone-platform=wayland "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
+        echo "[sway] opened $BIN on request ($TRIGGER)"; }
+    fi
+    sleep 2
+  done
   echo "[sway] sway exited"
   CODE=0
 fi
