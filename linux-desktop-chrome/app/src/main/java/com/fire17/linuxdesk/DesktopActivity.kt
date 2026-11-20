@@ -159,8 +159,8 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
             pass = { e -> super.dispatchTouchEvent(e) },
             lens = lens(v))
         g.enabled = gesturesOn()
-        // Sway ignores lorie's XI2 touches (Tami 01:38: "I still can't click"), so one finger is a mouse there.
-        g.pointerMode = swaySession()
+        // Sway (and Hyprland in Weston) ignore lorie's XI2 touches (Tami 01:38: "I still can't click"): one finger is a mouse.
+        g.pointerMode = pointerSession()
         g.magnifier = magnifierOn()
         // Buttons over the display (keyboard button, lorie's extra keys) are skipped by DesktopGestures itself;
         // the key bar's modifiers are touch-listener views, not clickable ones, so it is named here.
@@ -169,15 +169,22 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
     }
 
     /**
-     * True if this session runs sway: Omarchy with the sway desktop chosen and its packages installed (otherwise
-     * start-sway.sh runs i3 instead). The desktop is fixed for the session (the launcher locks it while running).
-     * Not detected: sway installed but failing to come up within 10 s, when start-sway.sh also falls back to i3.
+     * True if this session runs a Wayland compositor that ignores lorie's XI2 touches, so one finger is a mouse:
+     * Omarchy with sway chosen and its packages installed (otherwise start-sway.sh runs i3 instead), or Omarchy with
+     * Hyprland chosen and the patched stack present (Hyprland nests in Weston, which takes lorie's pointer events the
+     * same way). The desktop is fixed for the session (the launcher locks it while running).
+     * Not detected: a compositor failing to come up, when the start script falls back (hyprland -> sway -> i3).
      */
-    private fun swaySession(): Boolean =
-        com.fire17.linuxdesk.linux.Distro.current(this) == com.fire17.linuxdesk.linux.Distro.OMARCHY &&
-            com.fire17.linuxdesk.linux.Desktop.current(this) == com.fire17.linuxdesk.linux.Desktop.SWAY &&
-            java.io.File(com.fire17.linuxdesk.linux.Distro.OMARCHY.rootfsDir(this),
-                com.fire17.linuxdesk.linux.Desktop.SWAY_MARKER).isFile
+    private fun pointerSession(): Boolean {
+        if (com.fire17.linuxdesk.linux.Distro.current(this) != com.fire17.linuxdesk.linux.Distro.OMARCHY) return false
+        val root = com.fire17.linuxdesk.linux.Distro.OMARCHY.rootfsDir(this)
+        return when (com.fire17.linuxdesk.linux.Desktop.current(this)) {
+            com.fire17.linuxdesk.linux.Desktop.SWAY ->
+                java.io.File(root, com.fire17.linuxdesk.linux.Desktop.SWAY_MARKER).isFile
+            com.fire17.linuxdesk.linux.Desktop.HYPRLAND -> com.fire17.linuxdesk.linux.Desktop.hyprlandAvailable(root)
+            else -> false
+        }
+    }
 
     /** LorieView's public renderer zoom API (lorie @a00942e) for the magnifier. */
     private fun lens(v: com.termux.x11.LorieView) = object : com.fire17.linuxdesk.x11.Magnifier.Lens {
@@ -191,7 +198,7 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
         override fun reset() { v.resetRendererZoom(); v.clearPinchZoomFocus() }
     }
 
-    private fun magnifierOn() = LinuxDeskSettings(this).magnifierOn(swaySession())
+    private fun magnifierOn() = LinuxDeskSettings(this).magnifierOn(pointerSession())
 
     private fun hits(view: View?, x: Float, y: Float): Boolean {
         if (view == null || view.visibility != View.VISIBLE || !view.isAttachedToWindow) return false

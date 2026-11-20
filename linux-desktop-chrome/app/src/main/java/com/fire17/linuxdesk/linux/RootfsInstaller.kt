@@ -136,12 +136,12 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
         copyAssetDir("linuxdesk", dest)
         com.fire17.linuxdesk.ota.BundleStore(context.filesDir, com.fire17.linuxdesk.BuildConfig.VERSION_CODE.toLong(), com.fire17.linuxdesk.BuildConfig.VERSION_NAME).overlayActive(dest) // OTA v1: signed ota/active over APK assets (no-op when none)
         for (n in listOf("start-browser.sh", "fit-window.sh", "setup-packages.sh",
-                "setup-omarchy.sh", "start-omarchy.sh", "start-sway.sh", "setup-genie-arch.sh",
+                "setup-omarchy.sh", "start-omarchy.sh", "start-sway.sh", "start-hyprland.sh", "setup-genie-arch.sh",
                 "setup-omarchy-clean.sh", "start-omarchy-clean.sh")) {
             File(dest, n).takeIf { it.isFile }?.setExecutable(true, false)
         }
         if (focusBridgeConfigJs != null) File(dest, "focus-bridge/config.js").writeText(focusBridgeConfigJs)
-        // Omarchy: setup-omarchy.sh / start scripts read the desktop choice (i3|sway) from /etc/linuxdesk/desktop.
+        // Omarchy: setup-omarchy.sh / start scripts read the desktop choice (i3|sway|hyprland) from /etc/linuxdesk/desktop.
         // OMARCHY_CLEAN writes it too: its sway fallback is start-sway.sh, whose setup-omarchy.sh helpers read it.
         if (distro.isArch) {
             File(rootfsDir, Desktop.GUEST_FILE).apply { parentFile?.mkdirs() }.writeText(Desktop.current(context).id + "\n")

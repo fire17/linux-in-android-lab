@@ -241,7 +241,8 @@ SWAY_PKGS="sway waybar foot mako xorg-xwayland swaybg wofi"
 # after the core set, never part of the missing-check below; the theme falls back (baked palette, waybar dock, mako).
 SWAY_EXTRA_PKGS="matugen nwg-dock swaync inter-font"
 sway_main() {
-  [ "$(cat "$MARK/desktop" 2>/dev/null || true)" = sway ] || return 0
+  # hyprland too: start-hyprland.sh falls back to start-sway.sh, which needs sway installed (else it lands on i3).
+  case "$(cat "$MARK/desktop" 2>/dev/null || true)" in sway|hyprland) ;; *) return 0 ;; esac
   [ "$(cat "$MARK/sway-v1" 2>/dev/null || true)" = "$SWAY_REV" ] && { log "sway: already installed"; return 0; }
   if [ "${1:-}" = wait ]; then
     wait_for_mem "$APPS_MEM_KB" || { log "sway: memory still low after 20 min (avail $AVAIL_MB MB, swap $SWAP_MB MB); next Start retries"; return 1; }

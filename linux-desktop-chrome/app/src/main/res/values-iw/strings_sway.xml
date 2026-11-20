@@ -2,4 +2,6 @@
 <!-- Sway lane: the Omarchy desktop choice in the launcher (K/linux/Desktop.kt). -->
 <resources>
     <string name="ld_desktop_sway">שולחן העבודה של Omarchy: Sway (ניסיוני)</string>
+    <string name="ld_desktop_hyprland">Omarchy (Hyprland) - ניסיוני</string>
+    <string name="ld_desktop_hyprland_missing">Omarchy (Hyprland) - ניסיוני: צריך את חבילת ה-Hyprland המתוקנת (/opt/omarchy-android/hyprland) במערכת של Omarchy</string>
 </resources>

@@ -90,6 +90,15 @@
             android:layout_marginBottom="8dp"
             android:text="@string/ld_desktop_sway" />
 
+        <!-- U5, experimental and OFF by default: the real Omarchy on Hyprland (nested in Weston), K/linux/Desktop.kt. -->
+        <CheckBox
+            android:id="@+id/desktop_hyprland"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/ld_desktop_hyprland" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

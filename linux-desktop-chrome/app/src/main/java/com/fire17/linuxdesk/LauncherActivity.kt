@@ -46,6 +46,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
     private lateinit var rootfsProgress: ProgressBar
     private lateinit var distroGroup: RadioGroup
     private lateinit var swayBox: CheckBox
+    private lateinit var hyprBox: CheckBox
     private var autoOpened = false
     private lateinit var micSwitch: Switch
     private var micSyncing = false
@@ -92,7 +93,19 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         swayBox = findViewById(R.id.desktop_sway)
         swayBox.isChecked = Desktop.current(this) == Desktop.SWAY
         swayBox.isEnabled = Distro.current(this) == Distro.OMARCHY
-        swayBox.setOnCheckedChangeListener { _, on -> Desktop.set(this, if (on) Desktop.SWAY else Desktop.I3) }
+        // U5: the real Omarchy-on-Hyprland desktop, offered only when the patched stack is in the Omarchy rootfs.
+        // The two boxes are exclusive (neither = i3); unchecking one only resets to i3 if it was the chosen one.
+        hyprBox = findViewById(R.id.desktop_hyprland)
+        hyprBox.isChecked = Desktop.current(this) == Desktop.HYPRLAND
+        swayBox.setOnCheckedChangeListener { _, on ->
+            if (on) { Desktop.set(this, Desktop.SWAY); hyprBox.isChecked = false }
+            else if (Desktop.current(this) == Desktop.SWAY) Desktop.set(this, Desktop.I3)
+        }
+        hyprBox.setOnCheckedChangeListener { _, on ->
+            if (on) { Desktop.set(this, Desktop.HYPRLAND); swayBox.isChecked = false }
+            else if (Desktop.current(this) == Desktop.HYPRLAND) Desktop.set(this, Desktop.I3)
+        }
+        updateHyprBox(Distro.current(this) == Distro.OMARCHY)
         distroGroup.setOnCheckedChangeListener { _, id ->
             Distro.set(this, when (id) {
                 R.id.distro_omarchy -> Distro.OMARCHY
@@ -100,6 +113,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
                 else -> Distro.ALPINE
             })
             swayBox.isEnabled = id == R.id.distro_omarchy
+            updateHyprBox(id == R.id.distro_omarchy)
         }
 
         val url = findViewById<EditText>(R.id.url)
@@ -350,6 +364,13 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         super.onStop()
     }
 
+    /** The Hyprland choice: enabled when [allowed] and the patched stack exists, else disabled with a hint. */
+    private fun updateHyprBox(allowed: Boolean) {
+        val stack = Desktop.hyprlandAvailable(Distro.OMARCHY.rootfsDir(this))
+        hyprBox.isEnabled = allowed && stack
+        hyprBox.setText(if (stack) R.string.ld_desktop_hyprland else R.string.ld_desktop_hyprland_missing)
+    }
+
     override fun onState(s: SessionBus.Snapshot) {
         // The distro is fixed while a session runs (each has its own rootfs; switch after Stop).
         val idle = s.state in setOf(State.IDLE, State.STOPPED, State.ERROR)
@@ -358,6 +379,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             c.isEnabled = idle && ((c.id != R.id.distro_omarchy && c.id != R.id.distro_omarchy_clean) || Distro.omarchySupported())
         }
         swayBox.isEnabled = idle && Distro.current(this) == Distro.OMARCHY
+        updateHyprBox(idle && Distro.current(this) == Distro.OMARCHY)
         val pct = SessionBus.downloadPercent
         // INVISIBLE, not GONE: the bar keeps its space, so the buttons below never move when a download starts or ends.
         rootfsProgress.visibility = if (s.state == State.INSTALLING_ROOTFS && pct in 0..100) View.VISIBLE else View.INVISIBLE
