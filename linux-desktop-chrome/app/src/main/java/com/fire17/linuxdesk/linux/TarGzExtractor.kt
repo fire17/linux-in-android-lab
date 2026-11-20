@@ -33,6 +33,8 @@ class TarGzExtractor(
      * firmware and modules (about 1.4 GB of 2.1 GB unpacked), which proot never uses.
      */
     private val skipPrefixes: List<String> = emptyList(),
+    /** false = [extract]'s input is already a plain tar (PrebuiltRootfs decodes zstd itself). */
+    private val gzip: Boolean = true,
 ) {
 
     data class Stats(var files: Int = 0, var dirs: Int = 0, var symlinks: Int = 0, var hardlinks: Int = 0, var skipped: Int = 0, var bytes: Long = 0)
@@ -42,7 +44,8 @@ class TarGzExtractor(
     fun extract(input: InputStream, onProgress: (String) -> Unit = {}): Stats {
         val stats = Stats()
         val dirModes = ArrayList<Pair<File, Int>>()
-        val tin = BufferedInputStream(GZIPInputStream(BufferedInputStream(input, 64 * 1024), 64 * 1024), 64 * 1024)
+        val tin = if (gzip) BufferedInputStream(GZIPInputStream(BufferedInputStream(input, 64 * 1024), 64 * 1024), 64 * 1024)
+            else BufferedInputStream(input, 256 * 1024)
         val header = ByteArray(BLOCK)
 
         var paxPath: String? = null

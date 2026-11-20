@@ -84,9 +84,11 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         // Alpine is the default and the only choice on x86_64 (Arch Linux ARM is aarch64 only).
         findViewById<View>(R.id.distro_omarchy).isEnabled = Distro.omarchySupported()
         findViewById<View>(R.id.distro_omarchy_clean).isEnabled = Distro.omarchySupported()
+        findViewById<View>(R.id.distro_omarchy_mobile).isEnabled = Distro.omarchySupported()
         distroGroup.check(when (Distro.current(this)) {
             Distro.OMARCHY -> R.id.distro_omarchy
             Distro.OMARCHY_CLEAN -> R.id.distro_omarchy_clean
+            Distro.OMARCHY_MOBILE -> R.id.distro_omarchy_mobile
             Distro.ALPINE -> R.id.distro_alpine
         })
         // Sway lane: Omarchy's desktop (i3 default, sway experimental); only meaningful while Omarchy is selected.
@@ -110,6 +112,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             Distro.set(this, when (id) {
                 R.id.distro_omarchy -> Distro.OMARCHY
                 R.id.distro_omarchy_clean -> Distro.OMARCHY_CLEAN   // experimental, its own rootfs (notes/fresh/PLAN.md)
+                R.id.distro_omarchy_mobile -> Distro.OMARCHY_MOBILE // Omarchy Mobile phone shell (notes/omamobile/REPORT.md)
                 else -> Distro.ALPINE
             })
             swayBox.isEnabled = id == R.id.distro_omarchy
@@ -212,7 +215,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
             ensureNotificationPermission()
             // Omarchy: the install and the boot are shown full screen (Tami AC21A217), not as a launcher spinner.
             // Reset BEFORE start, so the new session's first lines are never wiped.
-            val omarchy = Distro.current(this).isArch   // both Omarchy flavours use the full-screen setup screen
+            val omarchy = Distro.current(this).isArch   // every Omarchy flavour uses the full-screen setup screen
             if (omarchy) com.fire17.linuxdesk.linux.OmarchyRun.reset()
             SessionService.start(this, SessionService.ACTION_START)
             if (omarchy) {
@@ -376,7 +379,7 @@ class LauncherActivity : Activity(), SessionBus.Listener {
         val idle = s.state in setOf(State.IDLE, State.STOPPED, State.ERROR)
         for (i in 0 until distroGroup.childCount) {
             val c = distroGroup.getChildAt(i)
-            c.isEnabled = idle && ((c.id != R.id.distro_omarchy && c.id != R.id.distro_omarchy_clean) || Distro.omarchySupported())
+            c.isEnabled = idle && (c.id == R.id.distro_alpine || Distro.omarchySupported())   // every other choice is Arch (arm64)
         }
         swayBox.isEnabled = idle && Distro.current(this) == Distro.OMARCHY
         updateHyprBox(idle && Distro.current(this) == Distro.OMARCHY)

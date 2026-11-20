@@ -36,6 +36,7 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
     private fun wantedVersion(): String = when (distro) {
         Distro.ALPINE -> bundledVersion()
         Distro.OMARCHY, Distro.OMARCHY_CLEAN -> ArchRootfsDownloader.VERSION
+        Distro.OMARCHY_MOBILE -> OmamobileRootfs.VERSION
     }
 
     fun isInstalled(): Boolean =
@@ -60,9 +61,15 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
                 context.assets.open(asset).use { TarGzExtractor(tmp).extract(it, onProgress) }
             }
             // OMARCHY_CLEAN extracts the same tarball into its OWN dir (rootfs-omarchy-clean): a fresh, untouched base.
-            Distro.OMARCHY, Distro.OMARCHY_CLEAN -> {
+            // OMARCHY_MOBILE first tries its prebuilt release (8 parallel ranges, zstd, sha256; the tree already holds
+            // the packages marker), and only when that asset is missing takes this ALARM path + setup-omamobile.sh.
+            Distro.OMARCHY, Distro.OMARCHY_CLEAN, Distro.OMARCHY_MOBILE -> {
                 if (!Distro.omarchySupported()) error("Omarchy (Arch Linux ARM) needs an arm64-v8a device")
-                if (stream) {
+                if (distro == Distro.OMARCHY_MOBILE && PrebuiltRootfs.tryInstall(OmamobileRootfs.ASSET_URL,
+                        OmamobileRootfs.SHA256_URL, tmp, onProgress, onPercent)) {
+                    onPercent(-1)
+                    "prebuilt ${OmamobileRootfs.ASSET} (${OmamobileRootfs.RELEASE_TAG})"
+                } else if (stream) {
                     // A2: one pass, nothing stored; the hash is checked at the end of the stream, before the swap below.
                     ArchRootfsDownloader(context).streamInto(tmp, onProgress, onPercent).also { onPercent(-1) }
                 } else {
@@ -137,7 +144,7 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
         com.fire17.linuxdesk.ota.BundleStore(context.filesDir, com.fire17.linuxdesk.BuildConfig.VERSION_CODE.toLong(), com.fire17.linuxdesk.BuildConfig.VERSION_NAME).overlayActive(dest) // OTA v1: signed ota/active over APK assets (no-op when none)
         for (n in listOf("start-browser.sh", "fit-window.sh", "setup-packages.sh",
                 "setup-omarchy.sh", "start-omarchy.sh", "start-sway.sh", "start-hyprland.sh", "setup-genie-arch.sh",
-                "setup-omarchy-clean.sh", "start-omarchy-clean.sh")) {
+                "setup-omarchy-clean.sh", "start-omarchy-clean.sh", "setup-omamobile.sh", "start-omamobile.sh")) {
             File(dest, n).takeIf { it.isFile }?.setExecutable(true, false)
         }
         if (focusBridgeConfigJs != null) File(dest, "focus-bridge/config.js").writeText(focusBridgeConfigJs)

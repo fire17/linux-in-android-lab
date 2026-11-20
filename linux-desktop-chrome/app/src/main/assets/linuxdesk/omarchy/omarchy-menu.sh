@@ -187,10 +187,53 @@ install_webapp() {
   } > "$f" || { notify "Could not write $f"; return; }
   notify "Web app '$name' added: find it under Apps"
 }
+# AI coding agents. Always the newest upstream release, never a pinned version: the [omarchy]/[extra] repo packages lag
+# (2026-11-20: omarchy openai-codex-bin 0.162.1 vs upstream 0.171.0, extra opencode 2.1.4 vs 2.3.2, gemini-cli 0.69.0
+# vs 0.70.0). Claude Code uses Anthropic's native installer (it then self-updates); the rest come from their GitHub
+# "releases/latest" or npm "@latest". Runs in a terminal so the user sees progress; re-running it updates.
+AGENTS_BIN="${LINUXDESK_AGENTS_BIN:-/usr/local/bin}"
+install_agent() {
+  in_terminal '
+set -e
+a=$1; bin=$2; arch=$(uname -m); t=$(mktemp -d); trap "rm -rf $t" EXIT; cd "$t"
+gh_latest() { curl -fsSL -o /dev/null -w "%{url_effective}" "https://github.com/$1/releases/latest" | sed "s#.*/tag/##"; }
+case "$a" in
+  claude)   curl -fsSL https://claude.ai/install.sh | bash
+            [ -w "$bin" ] && ln -sfn "$HOME/.local/bin/claude" "$bin/claude" || true ;;
+  codex)    curl -fsSL -o c.tgz "https://github.com/openai/codex/releases/latest/download/codex-$arch-unknown-linux-musl.tar.gz"
+            tar -xzf c.tgz; install -m755 "codex-$arch-unknown-linux-musl" "$bin/codex" ;;
+  opencode) [ "$arch" = aarch64 ] && oa=arm64 || oa=x64-baseline
+            # GitHub "latest" still points at the 1.x line; take the highest stable vX.Y.Z tag (2.x).
+            v=$(curl -fsSL "https://api.github.com/repos/anomalyco/opencode/releases?per_page=20" \
+                | grep -oE "\"tag_name\": *\"v[0-9]+\.[0-9]+\.[0-9]+\"" | grep -oE "v[0-9.]+" | sort -V | tail -1)
+            curl -fsSL -o o.tgz "https://github.com/anomalyco/opencode/releases/download/$v/opencode-linux-$oa.tar.gz"
+            tar -xzf o.tgz; install -m755 opencode "$bin/opencode" ;;
+  crush)    v=$(gh_latest charmbracelet/crush); v=${v#v}; [ "$arch" = aarch64 ] && ca=arm64 || ca=x86_64
+            curl -fsSL -o k.tgz "https://github.com/charmbracelet/crush/releases/download/v$v/crush_${v}_Linux_$ca.tar.gz"
+            tar -xzf k.tgz; install -m755 "$(find . -type f -name crush | head -1)" "$bin/crush" ;;
+  gemini|copilot)
+            command -v npm >/dev/null || pacman -S --needed nodejs npm
+            [ "$a" = gemini ] && p=@google/gemini-cli || p=@github/copilot
+            npm install -g "$p@latest" ;;
+esac
+echo; echo "$a is now: $("$a" --version 2>&1 | head -1)"' "$1" "$AGENTS_BIN"
+}
+install_ai() {
+  case $(menu "AI Agents (latest)" "Claude Code" "Codex" "OpenCode" "Crush" "Gemini CLI" "GitHub Copilot CLI" "All of them") in
+    "Claude Code") install_agent claude ;;
+    Codex) install_agent codex ;;
+    OpenCode) install_agent opencode ;;
+    Crush) install_agent crush ;;
+    "Gemini CLI") install_agent gemini ;;
+    "GitHub Copilot CLI") install_agent copilot ;;
+    "All of them") for a in claude codex opencode crush; do install_agent "$a"; done ;;
+  esac
+}
 install() {
-  case $(menu "Install" "󰣇  Package" "  Web App" "󰣇  AUR" "  Dev Env" "  Font") in
+  case $(menu "Install" "󰣇  Package" "  Web App" "󱚤  AI Agents" "󰣇  AUR" "  Dev Env" "  Font") in
     *Package) install_package ;;
     *"Web App") install_webapp ;;
+    *"AI Agents") install_ai ;;
     *AUR|*"Dev Env"|*Font) notify "Not available on the phone yet" ;;
   esac
 }

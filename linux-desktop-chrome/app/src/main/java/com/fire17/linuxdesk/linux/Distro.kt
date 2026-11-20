@@ -14,6 +14,8 @@ import java.io.File
  *                                    Omarchy's pacman repo: Google Chrome, Omarchy themes and fonts, i3 on lorie X11.
  *   OMARCHY_CLEAN  filesDir/rootfs-omarchy-clean  (experimental) a fresh Arch Linux ARM with the real `omarchy`
  *                                    package; Hyprland nested in Weston when the patched stack is present, else sway.
+ *   OMARCHY_MOBILE filesDir/rootfs-omamobile  Omarchy Mobile's phone shell (portrait Hyprland in Weston), from a
+ *                                    prebuilt rootfs release (8 parallel ranges) or, if missing, pacman on ALARM.
  *
  * The X server (lorie, ":x11" process) reads the selected rootfs dir from the bind intent, and every guest
  * process runs under proot -r <rootfsDir>. Paths that other lanes still hardcode as filesDir/rootfs (the genie
@@ -42,11 +44,19 @@ enum class Distro(
      * shims for systemd/uwsm/sudo (notes/fresh/PLAN.md). Never touches rootfs or rootfs-arch.
      */
     OMARCHY_CLEAN("omarchy-clean", "rootfs-omarchy-clean", "etc/linuxdesk/omarchy-clean-v1",
-        "/opt/linuxdesk/setup-omarchy-clean.sh", "/opt/linuxdesk/start-omarchy-clean.sh", "/opt/linuxdesk/setup-genie-arch.sh");
+        "/opt/linuxdesk/setup-omarchy-clean.sh", "/opt/linuxdesk/start-omarchy-clean.sh", "/opt/linuxdesk/setup-genie-arch.sh"),
+    /**
+     * Omarchy Mobile (Tami 2026-11-20 06:37: "a fully separate OS option"): the phone-shell profile of
+     * derekross/omarchy-mobile (touch launcher, home screens, squeekboard, phone.lua rules) over our patched Hyprland,
+     * portrait, in its own rootfs (notes/omamobile/REPORT.md). Fast path: ONE prebuilt rootfs from a GitHub Release
+     * ([OmamobileRootfs]); fallback: setup-omamobile.sh's pacman path on the plain ALARM tarball.
+     */
+    OMARCHY_MOBILE("omarchy-mobile", "rootfs-omamobile", "etc/linuxdesk/omamobile-v1",
+        "/opt/linuxdesk/setup-omamobile.sh", "/opt/linuxdesk/start-omamobile.sh", "/opt/linuxdesk/setup-genie-arch.sh");
 
     fun rootfsDir(ctx: Context): File = File(ctx.filesDir, dirName)
 
-    /** Both Omarchy flavours are Arch Linux ARM: same tarball, same pacman, same full-screen setup screen. */
+    /** Every Omarchy flavour is Arch Linux ARM: same tarball, same pacman, same full-screen setup screen. */
     val isArch: Boolean get() = this != ALPINE
 
     companion object {

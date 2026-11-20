@@ -176,6 +176,8 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
      * Not detected: a compositor failing to come up, when the start script falls back (hyprland -> sway -> i3).
      */
     private fun pointerSession(): Boolean {
+        // Omarchy Mobile: Hyprland in Weston as well (start-omamobile.sh), so one finger is a mouse there too.
+        if (com.fire17.linuxdesk.linux.Distro.current(this) == com.fire17.linuxdesk.linux.Distro.OMARCHY_MOBILE) return true
         if (com.fire17.linuxdesk.linux.Distro.current(this) != com.fire17.linuxdesk.linux.Distro.OMARCHY) return false
         val root = com.fire17.linuxdesk.linux.Distro.OMARCHY.rootfsDir(this)
         return when (com.fire17.linuxdesk.linux.Desktop.current(this)) {

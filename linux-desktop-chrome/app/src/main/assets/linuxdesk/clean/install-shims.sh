@@ -17,6 +17,17 @@ put uwsm-shim.sh uwsm-app || rc=1
 put systemd-cat-shim.sh systemd-cat || rc=1
 put sudo-shim.sh sudo || rc=1
 put sudo-shim.sh pkexec || rc=1
+# systemd-run / systemd-inhibit / loginctl (notes/systemd/REPORT.md R1: 8 Omarchy tools use systemd-run). ON by
+# default (Tami 06:56 AC5559B3: "no approval needed from me"); /etc/linuxdesk/shim-logind containing 0 turns it off.
+if [ "${LD_SHIM_LOGIND:-$(cat /etc/linuxdesk/shim-logind 2>/dev/null || echo 1)}" = 1 ]; then
+  put systemd-run-shim.sh systemd-run || rc=1
+  put systemd-inhibit-shim.sh systemd-inhibit || rc=1
+  put loginctl-shim.sh loginctl || rc=1
+else
+  for n in systemd-run systemd-inhibit loginctl; do
+    cmp -s "$C/$n-shim.sh" "$D/$n" 2>/dev/null && rm -f "$D/$n"   # switched off: remove only our own copy
+  done
+fi
 # bubblewrap (glycin image loaders, xdg-desktop-portal): the existing LinuxDesk shim, shared with the other distro.
 [ -f /opt/linuxdesk/omarchy/bwrap-shim.sh ] && { cmp -s /opt/linuxdesk/omarchy/bwrap-shim.sh "$D/bwrap" 2>/dev/null \
   || install -m 755 /opt/linuxdesk/omarchy/bwrap-shim.sh "$D/bwrap"; }

@@ -35,9 +35,24 @@ class DistroTest {
         assertEquals("/opt/linuxdesk/setup-omarchy-clean.sh", c.setupScript)
         assertEquals("/opt/linuxdesk/start-omarchy-clean.sh", c.startScript)
         assertTrue(c.genieScript.endsWith("setup-genie-arch.sh"))
-        assertEquals(3, Distro.entries.map { it.dirName }.toSet().size)
-        assertEquals(3, Distro.entries.map { it.packagesMarker }.toSet().size)
+        assertEquals(Distro.entries.size, Distro.entries.map { it.dirName }.toSet().size)
+        assertEquals(Distro.entries.size, Distro.entries.map { it.packagesMarker }.toSet().size)
         assertTrue(c.isArch && Distro.OMARCHY.isArch && !Distro.ALPINE.isArch)
+    }
+
+    /** Omarchy Mobile: a fourth, separate rootfs with its own scripts; the prebuilt asset URL points at the release. */
+    @Test fun omarchyMobileHasItsOwnRootfsAndScripts() {
+        val m = Distro.OMARCHY_MOBILE
+        assertEquals("omarchy-mobile", m.id)
+        assertEquals("rootfs-omamobile", m.dirName)
+        assertEquals("etc/linuxdesk/omamobile-v1", m.packagesMarker)
+        assertEquals("/opt/linuxdesk/setup-omamobile.sh", m.setupScript)
+        assertEquals("/opt/linuxdesk/start-omamobile.sh", m.startScript)
+        assertTrue(m.isArch)
+        assertEquals(4, Distro.entries.map { it.id }.toSet().size)
+        assertEquals("https://github.com/fire17/linux-in-android-lab/releases/download/omamobile-rootfs-v1/" +
+            "omamobile-rootfs-aarch64.tar.zst", OmamobileRootfs.ASSET_URL)
+        assertEquals(OmamobileRootfs.ASSET_URL + ".sha256", OmamobileRootfs.SHA256_URL)
     }
 
     @Test fun archDownloadPinsAreWellFormed() {

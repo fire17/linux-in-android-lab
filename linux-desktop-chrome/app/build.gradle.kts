@@ -23,7 +23,7 @@ android {
         targetSdk = 36
         // CI passes its run number, so every build is a higher version than the last and installs as an update.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(100) ?: 1
-        versionName = "0.2.35"
+        versionName = "0.2.36"
 
         ndk {
             // arm64-v8a = real phones. x86_64 = the CI emulator smoke test.
@@ -116,6 +116,9 @@ dependencies {
     // IrohLink runs iroh's suspend calls with runBlocking(Dispatchers.IO), as Storage Genie does. The stdlib-only
     // bridge we used before never got Endpoint.bind's result on Android (bind timed out after 30 s).
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // PrebuiltRootfs: the prebuilt Omarchy rootfs release assets are tar.zst (zstd -19 --long=27). The AAR ships the
+    // arm64-v8a + x86_64 libzstd-jni.so (BSD-2-Clause).
+    implementation("com.github.luben:zstd-jni:1.5.7-6@aar")
 
     testImplementation("junit:junit:4.13.2")
     // android.jar's org.json is a stub on the JVM (returns defaults); FrameTest/RouterTest need the real one.

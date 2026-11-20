@@ -1,0 +1,30 @@
+#!/bin/sh
+# omarchy-proot-audio: the PRoot audio panel's backend (plugins/panels/audio/Panel.qml, OMARCHY_PROOT=1).
+#   status          -> "<volume 0-100> <muted 0|1> <available 0|1>"   (the panel polls this every 2 s)
+#   volume <0-100>  -> set the output volume
+#   mute-toggle     -> toggle the output mute
+# LinuxDesk's guest audio is PulseAudio (audio/PulseHost.kt; PULSE_SERVER / PULSE_SINK come from the app's env).
+# Shipped by LinuxDesk (assets/linuxdesk/hyprland/indicators/bin), installed by start-hyprland.sh when absent.
+SINK=${PULSE_SINK:-@DEFAULT_SINK@}
+have() { command -v pactl >/dev/null 2>&1; }
+case "${1:-status}" in
+  status)
+    have || { echo "0 1 0"; exit 0; }
+    v=$(timeout 2 pactl get-sink-volume "$SINK" 2>/dev/null | sed -n 's/^[^0-9]*[0-9]* \/ *\([0-9]*\)%.*/\1/p' | head -n 1)
+    m=$(timeout 2 pactl get-sink-mute "$SINK" 2>/dev/null)
+    case "$v" in ''|*[!0-9]*) echo "0 1 0"; exit 0 ;; esac
+    case "$m" in *yes*) m=1 ;; *) m=0 ;; esac
+    echo "$v $m 1"
+    ;;
+  volume)
+    have || exit 1
+    case "$2" in ''|*[!0-9]*) echo "usage: $0 volume <0-100>" >&2; exit 2 ;; esac
+    v=$2; [ "$v" -gt 100 ] && v=100
+    timeout 2 pactl set-sink-volume "$SINK" "$v%"
+    ;;
+  mute-toggle)
+    have || exit 1
+    timeout 2 pactl set-sink-mute "$SINK" toggle
+    ;;
+  *) echo "usage: $0 status | volume <0-100> | mute-toggle" >&2; exit 2 ;;
+esac

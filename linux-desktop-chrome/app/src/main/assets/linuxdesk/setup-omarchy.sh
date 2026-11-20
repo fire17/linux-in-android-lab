@@ -306,6 +306,41 @@ look_main() {
   fi
   return 0
 }
+# The Hyprland desktop's command-line tools (optional; sweep lane 2026-11-20, notes/gap/SWEEP.md #2). Omarchy's tools
+# call jq (80 files), gum (42), wl-copy/wl-paste (clipboard, screenshots), grim + slurp + satty (screenshots), fd/rg/fzf
+# (pickers), hyprpicker/hyprsunset; none were installed, so the menus, screenshots and clipboard failed quietly. All are
+# in ALARM extra and need no systemd. `setup-omarchy.sh hypr`, started in the background by start-hyprland.sh while
+# /etc/linuxdesk/hypr-tools-v1 (= HYPR_TOOLS_REV) is missing. Same rules as the look stage: one package per pacman
+# call, never fatal, gives up (writes the marker) after APPS_TRIES passes.
+HYPR_TOOLS_REV=1
+HYPR_TOOLS_PKGS="jq gum wl-clipboard grim slurp fd ripgrep fzf eza zoxide starship bat hyprpicker hyprsunset satty"
+hypr_tools_main() {
+  [ "$(cat "$MARK/hypr-tools-v1" 2>/dev/null || true)" = "$HYPR_TOOLS_REV" ] && { log "hypr-tools: already done"; return 0; }
+  mkdir -p "$MARK"
+  if command -v flock >/dev/null 2>&1; then
+    exec 7>"$MARK/omarchy-hypr-tools.lock"
+    flock -n 7 || { log "hypr-tools: another run is installing; not starting a second one"; return 0; }
+  fi
+  wait_for_mem "$APPS_MEM_KB" || { log "hypr-tools: memory still low after 20 min; next Start retries"; return 0; }
+  if [ -e "$PACMAN_LCK" ] && command -v pgrep >/dev/null 2>&1 && ! pgrep -x pacman >/dev/null 2>&1; then log "hypr-tools: removing a stale pacman lock"; rm -f "$PACMAN_LCK"; fi
+  bad=""
+  for p in $HYPR_TOOLS_PKGS; do
+    pacman -Q "$p" >/dev/null 2>&1 && continue
+    log "hypr-tools: installing $p"
+    pacman -S --needed --noconfirm "$p" || { pacman -Syy --noconfirm && pacman -S --needed --noconfirm "$p"; } || true
+    pacman -Q "$p" >/dev/null 2>&1 || bad="$bad $p"
+  done
+  pacman -Scc --noconfirm >/dev/null 2>&1 || true
+  tries=$(( $(cat "$MARK/hypr-tools.tries" 2>/dev/null || echo 0) + 1 ))
+  echo "$tries" > "$MARK/hypr-tools.tries"
+  if [ -z "$bad" ] || [ "$tries" -ge "$APPS_TRIES" ]; then
+    echo "$HYPR_TOOLS_REV" > "$MARK/hypr-tools-v1"
+    if [ -z "$bad" ]; then log "hypr-tools: done"; else log "hypr-tools: giving up on:$bad"; fi
+  else
+    log "hypr-tools: not installed:$bad; next Start retries"
+  fi
+  return 0
+}
 # A5/A8 pacman.conf helpers (pacman-tune.sh, shipped next to this script). A missing helper never fails setup.
 PT="$(dirname "$0")/pacman-tune.sh"; [ -f "$PT" ] || PT=/opt/linuxdesk/pacman-tune.sh
 if [ -f "$PT" ]; then . "$PT"; else pacman_tune() { :; }; ignore_pkgs() { :; }; unignore_pkgs() { :; }; fi
@@ -314,6 +349,7 @@ pacman_tune /etc/pacman.conf
 if [ "${1:-}" = look ]; then look_main; exit 0; fi
 if [ "${1:-}" = apps ]; then apps_main; exit 0; fi
 if [ "${1:-}" = sway ]; then sway_main wait || exit 1; exit 0; fi
+if [ "${1:-}" = hypr ]; then hypr_tools_main; exit 0; fi
 
 log "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Arch Linux ARM}") on $(uname -m)"
 

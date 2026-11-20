@@ -160,6 +160,7 @@ class SessionService : Service() {
                 when (distro) {
                     Distro.ALPINE -> getString(R.string.ld_state_rootfs)
                     Distro.OMARCHY_CLEAN -> "Preparing Omarchy (clean, experimental): a fresh Arch Linux ARM …"
+                    Distro.OMARCHY_MOBILE -> "Preparing Omarchy Mobile: downloading the prebuilt phone system …"
                     else -> "Preparing Omarchy (Arch Linux ARM) …"
                 })
             var lastPct = -2
@@ -169,7 +170,8 @@ class SessionService : Service() {
                 if (pct != lastPct) {
                     lastPct = pct
                     SessionBus.downloadPercent = pct
-                    if (pct in 0..100) SessionBus.setState(State.INSTALLING_ROOTFS, "Downloading Arch Linux ARM … $pct%")
+                    if (pct in 0..100) SessionBus.setState(State.INSTALLING_ROOTFS,
+                        if (distro == Distro.OMARCHY_MOBILE) "Downloading Omarchy Mobile … $pct%" else "Downloading Arch Linux ARM … $pct%")
                 }
             })
             SessionBus.downloadPercent = -1
@@ -186,6 +188,8 @@ class SessionService : Service() {
             if (settings.cameraAlwaysOn && PhoneCamera.hasPermission(this)) PhoneCamera.setConsent(true)
             if (PhoneCamera.consent) PhoneCamera.start(this)
             PhoneCamera.writeConfig(installer.rootfsDir)
+            // Bar indicators (notes/indicators/REPORT.md B): battery/network/Bluetooth → <rootfs>/tmp/linuxdesk-status/status.json.
+            if (distro.isArch) try { com.fire17.linuxdesk.hw.StatusFeed.start(this, installer.rootfsDir) } catch (t: Throwable) { SessionBus.log("status: feed not started (${t.javaClass.simpleName})") }
             // Cameras v4: every session start puts the camera inventory into the session log (→ sys.logs, Share logs).
             com.fire17.linuxdesk.camera.CameraLog.logInventory(this, "session-start")
             if (PhoneCamera.running) {
@@ -204,6 +208,7 @@ class SessionService : Service() {
                     when (distro) {
                         Distro.ALPINE -> getString(R.string.ld_state_packages)
                         Distro.OMARCHY_CLEAN -> "First run: pacman installs the real Omarchy, Chrome and Weston (~0.9 GB download, ~3.3 GB on disk). This takes a while …"
+                        Distro.OMARCHY_MOBILE -> "First run (no prebuilt image yet): pacman installs Omarchy Mobile's phone shell (~1.1 GB download, ~3.5 GB on disk). This takes a while …"
                         else -> "First run: pacman installs Chrome, i3 and the Omarchy themes (~0.75 GB download, ~2.4 GB on disk). This takes a while …"
                     })
                 val r = proot.runOnce(distro.setupScript, timeoutSec = 3600, onLine = logLine)
@@ -364,6 +369,7 @@ class SessionService : Service() {
         SessionBus.setState(State.STOPPING, getString(R.string.ld_state_stopping))
         endMic()   // at once, on the caller's thread: the mic is released before anything else is torn down
         endCamera()
+        com.fire17.linuxdesk.hw.StatusFeed.stop()
         Thread {
             try { GenieRuntime.stop() } catch (_: Throwable) {}
             killBrowser()
@@ -385,6 +391,7 @@ class SessionService : Service() {
         MicForeground.listener = null
         endMic()
         endCamera()
+        com.fire17.linuxdesk.hw.StatusFeed.stop()
         if (!stopping) {
             stopping = true
             try { GenieRuntime.stop() } catch (_: Throwable) {}

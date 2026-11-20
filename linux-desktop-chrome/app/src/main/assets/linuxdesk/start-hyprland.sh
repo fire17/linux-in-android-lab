@@ -120,6 +120,42 @@ if [ -z "$OMSRC" ]; then
 fi
 say "Omarchy tree: $OMSRC"
 
+# ---- 3b. bar indicators (notes/indicators/REPORT.md, option B) -------------------------------------------------------
+# The guest has no system D-Bus (no UPower/NetworkManager/BlueZ), so the app writes /tmp/linuxdesk-status/status.json
+# (hw/StatusFeed.kt) and four patched QML files read it. They are copied over $OMSRC/shell/plugins once per REV, and only
+# onto the exact files they were made from (BASE.sha256; the original is kept as <file>.ld-orig), so a different Omarchy
+# tree is never overwritten. Also installs omarchy-proot-audio (the PRoot audio panel polls it every 2 s) when absent.
+# LINUXDESK_INDICATORS=0 turns this off and puts the original QML back.
+mkdir -p /tmp/linuxdesk-status 2>/dev/null && chmod 755 /tmp/linuxdesk-status 2>/dev/null
+IND=$LD/hyprland/indicators
+STAMP=$OMSRC/shell/.linuxdesk-indicators
+if [ "${LINUXDESK_INDICATORS:-1}" = 1 ] && [ -f "$IND/REV" ] && [ -f "$IND/BASE.sha256" ]; then
+  REV=$(cat "$IND/REV")
+  if [ "$(cat "$STAMP" 2>/dev/null)" != "$REV" ]; then
+    n=0; k=0
+    while read -r sum rel; do
+      [ -n "$rel" ] && [ -f "$IND/$rel" ] || continue
+      dst=$OMSRC/shell/$rel; orig=$dst.ld-orig
+      [ -f "$orig" ] || orig=$dst
+      if [ "$(sha256sum "$orig" 2>/dev/null | cut -d' ' -f1)" = "$sum" ]; then
+        [ "$orig" = "$dst" ] && cp -f "$dst" "$dst.ld-orig"
+        cp -f "$IND/$rel" "$dst.ld-new" && mv -f "$dst.ld-new" "$dst" && n=$((n + 1))
+      else k=$((k + 1)); fi
+    done < "$IND/BASE.sha256"
+    [ "$k" = 0 ] && printf '%s\n' "$REV" > "$STAMP"
+    say "indicators: $n QML file(s) patched (REV ${REV%% *}), $k skipped (not the base tree)"
+  fi
+elif [ -f "$STAMP" ]; then
+  for o in $(find "$OMSRC/shell/plugins" -name '*.ld-orig' 2>/dev/null); do mv -f "$o" "${o%.ld-orig}"; done
+  rm -f "$STAMP"; say "indicators: off (LINUXDESK_INDICATORS=0), original QML restored"
+fi
+if [ "${LINUXDESK_INDICATORS:-1}" = 1 ]; then
+  if [ -f "$IND/bin/omarchy-proot-audio" ] && [ ! -e "$OMSRC/bin/omarchy-proot-audio" ] && [ -d "$OMSRC/bin" ]; then
+    cp -f "$IND/bin/omarchy-proot-audio" "$OMSRC/bin/omarchy-proot-audio" && chmod 755 "$OMSRC/bin/omarchy-proot-audio" \
+      && say "installed omarchy-proot-audio"
+  fi
+fi
+
 # ---- 4. runtime dir + the plugin index (a2-launch.sh plugin_scan) ---------------------------------------------------
 mkdir -p "$RT" && chmod 700 "$RT" || fallback "cannot create $RT" "$@"
 # proot --kill-on-exit ended the last session's compositors; their sockets are stale now.
@@ -144,6 +180,35 @@ for sub in "$NH/.config/omarchy/plugins"/*/; do
 done
 mv -f "$tmp" "$out"
 say "plugin index: $(grep -c '^===firstparty::' "$out") manifests"
+
+# ---- 4b. missing session commands (sweep lane, notes/gap/SWEEP.md #1) ------------------------------------------------
+# Omarchy's launchers run `uwsm-app -- xdg-terminal-exec …`, `chromium …`, `nautilus …` and `systemctl/systemd-run
+# --user …`; none of those work in this guest, so Terminal-in-a-window tools (Setup > Default Agent, installers, TUIs),
+# web apps and the file manager did nothing. A shim dir goes on Hyprland's PATH after Omarchy's bin, ahead of /usr/bin
+# (the real systemd/uwsm packages stay untouched): omarchy/hypr-shim.sh (terminal/browser/file manager) + the clean/
+# PRoot shims for uwsm, systemd-run/-inhibit/-cat and loginctl. LINUXDESK_HYPR_SHIMS=0 turns it off.
+HSHIM=$LD/hypr-bin
+if [ "${LINUXDESK_HYPR_SHIMS:-1}" = 1 ]; then
+  mkdir -p "$HSHIM" 2>/dev/null
+  shim() {  # shim <source file> <name...>
+    s=$1; shift
+    [ -f "$s" ] || return 0
+    for n in "$@"; do cmp -s "$s" "$HSHIM/$n" 2>/dev/null || install -m 755 "$s" "$HSHIM/$n" 2>/dev/null; done
+  }
+  shim "$LD/omarchy/hypr-shim.sh" xdg-terminal-exec
+  command -v chromium >/dev/null 2>&1 || shim "$LD/omarchy/hypr-shim.sh" chromium
+  command -v nautilus >/dev/null 2>&1 || shim "$LD/omarchy/hypr-shim.sh" nautilus
+  shim "$LD/clean/uwsm-shim.sh" uwsm uwsm-app
+  # Not systemctl: its shim would run units' ExecStart, and `systemctl --user restart pipewire` would start PipeWire
+  # next to the proven PulseAudio bridge. The real systemctl just fails here, which Omarchy's tools tolerate.
+  shim "$LD/clean/systemd-run-shim.sh" systemd-run
+  shim "$LD/clean/systemd-inhibit-shim.sh" systemd-inhibit
+  shim "$LD/clean/loginctl-shim.sh" loginctl
+  shim "$LD/clean/systemd-cat-shim.sh" systemd-cat
+  say "session shims: $(ls "$HSHIM" 2>/dev/null | tr '\n' ' ')"
+else
+  rm -rf "$HSHIM"; HSHIM=/nonexistent
+fi
 
 # ---- 5. Weston, windowed, on lorie (a2-launch.sh weston; bar-live-test.sh up) ---------------------------------------
 i=0
@@ -192,7 +257,7 @@ start_hyprland() {  # own positional params: "$@" of the script (the browser arg
     HYPRLAND_EGL_SURFACELESS=1 HYPRLAND_NO_SD_NOTIFY=1 HYPRLAND_NO_SD_VARS=1 HYPRLAND_NO_RT=1 \
     QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland SDL_VIDEODRIVER=wayland QT_QUICK_BACKEND= \
     OMARCHY_PATH="$OMSRC" \
-    PATH="$HB:$OMSRC/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="$HB:$OMSRC/bin:$HSHIM:/usr/local/bin:/usr/bin:/bin" \
     XDG_DATA_DIRS="$OA/hyprland/share:/usr/local/share:/usr/share" \
     "$@" "$HB/Hyprland" --config "$HCFG" ) > /tmp/hyprland.log 2>&1 < /dev/null &
   HPID=$!; PIDS="$PIDS $HPID"
@@ -225,6 +290,29 @@ hyprctl eval 'hl.config({ misc = { disable_hyprland_guiutils_check = true, disab
 if [ "${LINUXDESK_HYPR_DOCK:-1}" = 1 ] && command -v waybar >/dev/null 2>&1 && [ -f /opt/linuxdesk/omarchy/hypr-dock.sh ]; then
   hyprctl eval 'hl.exec_cmd([[sh /opt/linuxdesk/omarchy/hypr-dock.sh > /tmp/hypr-dock.log 2>&1]])' >/dev/null 2>&1 \
     && say "dock started (waybar, /tmp/hypr-dock.log)" || say "note: could not start the dock"
+fi
+# Desktop icons (Tami 06:19: "no icons on the desktop"; sweep lane, notes/gap/SWEEP.md #4): a separate small Quickshell
+# config (omarchy/desktop-icons/shell.qml) on the Bottom layer, ~/Desktop entries, one tap opens. Its own qs process,
+# so a fault there cannot take Omarchy's bar down. NOT pcmanfm-qt --desktop (06:47 crash). LINUXDESK_HYPR_ICONS=0 = off.
+if [ "${LINUXDESK_HYPR_ICONS:-1}" = 1 ] && command -v qs >/dev/null 2>&1 && [ -f "$LD/omarchy/desktop-icons/shell.qml" ]; then
+  hyprctl eval "hl.exec_cmd([[qs -p $LD/omarchy/desktop-icons > /tmp/hypr-desktop-icons.log 2>&1]])" >/dev/null 2>&1 \
+    && say "desktop icons started (/tmp/hypr-desktop-icons.log)" || say "note: could not start the desktop icons"
+fi
+# Background installs (sweep lane, notes/gap/SWEEP.md #2/#3): the Hyprland tools (jq, gum, wl-clipboard, grim, slurp,
+# satty, ...; `setup-omarchy.sh hypr`), then Omarchy's apps (stage 8: thunar, mise-bin, ...) like start-sway.sh does.
+# One job, one pacman at a time, nice'd, memory-gated inside setup-omarchy.sh; never blocks the desktop.
+# LINUXDESK_HYPR_TOOLS=0 turns it off.
+if [ "${LINUXDESK_HYPR_TOOLS:-1}" = 1 ] && [ -f "$LD/setup-omarchy.sh" ] && [ -z "${LINUXDESK_DIR:-}" ]; then
+  HT=0; AP=0
+  [ "$(cat /etc/linuxdesk/hypr-tools-v1 2>/dev/null)" = 1 ] || HT=1
+  [ "$(cat /etc/linuxdesk/omarchy-stage-8 2>/dev/null)" = 1 ] || AP=1
+  if [ "$HT" = 1 ] || [ "$AP" = 1 ]; then
+    say "installing the Hyprland tools / Omarchy apps in the background (log: /etc/linuxdesk/omarchy-hypr.log)"
+    (
+      [ "$HT" = 1 ] && nice -n 10 sh "$LD/setup-omarchy.sh" hypr >> /etc/linuxdesk/omarchy-hypr.log 2>&1
+      [ "$AP" = 1 ] && nice -n 10 sh "$LD/setup-omarchy.sh" apps >> /etc/linuxdesk/omarchy-apps.log 2>&1
+    ) < /dev/null &
+  fi
 fi
 WL=$(ls "$RT" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -n 1)
 WL=${WL:-wayland-1}

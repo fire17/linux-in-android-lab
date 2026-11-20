@@ -40,5 +40,7 @@ class DesktopTest {
         // Omarchy (clean) has its own launcher, whatever the i3/sway checkbox says (it falls back to sway itself).
         assertEquals("/opt/linuxdesk/start-omarchy-clean.sh", Desktop.startScript(Distro.OMARCHY_CLEAN, Desktop.SWAY))
         assertEquals("/opt/linuxdesk/start-omarchy-clean.sh", Desktop.startScript(Distro.OMARCHY_CLEAN, Desktop.I3))
+        // Omarchy Mobile likewise always runs its own launcher.
+        for (d in Desktop.entries) assertEquals("/opt/linuxdesk/start-omamobile.sh", Desktop.startScript(Distro.OMARCHY_MOBILE, d))
     }
 }

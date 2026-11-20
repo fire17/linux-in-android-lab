@@ -1,0 +1,4 @@
+7174f83199dc416bc0525d1f6ea18e758b87231ca26f336bc13578f9c2102092  plugins/panels/power/Panel.qml
+c370df3a24bd172305dc602fbde746c12c14205441a4e11d8a77a93c54498e3c  plugins/panels/network/Panel.qml
+e7ea5980edbf3b7e99123f5610fced8f8fe06ce5710e217b928abcb351e31d43  plugins/panels/bluetooth/Panel.qml
+5557460d74ad329c53dea5850cf8178af106a0e47e09ef7963ce25f4fc2d1b45  plugins/services/battery/Service.qml

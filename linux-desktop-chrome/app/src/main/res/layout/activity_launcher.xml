@@ -79,6 +79,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Omarchy (clean) - EXPERIMENTAL: the real Omarchy on a fresh Arch Linux ARM; Hyprland when it can, else Sway. First run downloads ~1.7 GB and needs ~5 GB free" />
+
+            <!-- Fourth option (Tami 2026-11-20 06:37): Omarchy Mobile's phone shell as its own OS (notes/omamobile/REPORT.md). -->
+            <RadioButton
+                android:id="@+id/distro_omarchy_mobile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Omarchy Mobile (community phone shell, PRoot): touch launcher, home screens, on-screen keyboard; portrait Hyprland. One prebuilt ~1.2 GB download, needs ~5 GB free" />
         </RadioGroup>
 
         <!-- Sway lane, experimental and OFF by default: Omarchy runs sway instead of i3 (K/linux/Desktop.kt). -->
