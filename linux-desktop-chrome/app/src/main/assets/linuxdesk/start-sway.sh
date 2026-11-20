@@ -10,7 +10,10 @@
 #     with swaymsg and resized again when the phone rotates.
 #   - Chrome is a Wayland client (--ozone-platform=wayland) so sway tiles it. If it dies at once on Wayland it is
 #     started again through sway's XWayland. deskd's CDP pipe does not change.
-#   - If sway is missing or not up within 10 s, the i3 desktop starts instead: exec start-omarchy.sh with the same argv.
+#   - If sway is missing or not up within 10 s: one `LINUXDESK_ERROR <reason>` line (the app pops it up) and exit 1;
+#     nothing else starts (Tami 13:42, AC5CC9EB: "NOT a fallback"). LINUXDESK_ALLOW_FALLBACK=1 (default OFF) brings
+#     back the old fallback: exec start-omarchy.sh (i3) with the same argv.
+#   - Status markers for the app: LINUXDESK_STAGE_NOW Sway|Chrome as each starts, LINUXDESK_DESKTOP Sway once it answers.
 # This script exits with the browser's code (127 when none is installed), like start-omarchy.sh; proot's
 # --kill-on-exit then ends sway and anything started from it.
 export DISPLAY="${DISPLAY:-:0}"
@@ -21,6 +24,17 @@ export WLR_BACKENDS=x11 WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_X11_OU
 export XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland
 unset WAYLAND_DISPLAY SWAYSOCK
 FALLBACK=/opt/linuxdesk/start-omarchy.sh
+# nosway <why>: sway did not come up. Reported, or the i3 desktop with LINUXDESK_ALLOW_FALLBACK=1.
+nosway() {
+  why=$1; shift
+  if [ "${LINUXDESK_ALLOW_FALLBACK:-0}" = 1 ]; then
+    echo "[sway] $why; starting the i3 desktop instead (LINUXDESK_ALLOW_FALLBACK=1)"
+    exec "$FALLBACK" "$@"
+  fi
+  echo "[sway] $why; no other desktop is started (LINUXDESK_ALLOW_FALLBACK=1 = the old fallback)"
+  echo "LINUXDESK_ERROR Sway did not start: $why"
+  exit 1
+}
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 # proot --kill-on-exit ended the previous session's sway and dbus, so their sockets here are stale.
 rm -f "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/sway-ipc.* "$XDG_RUNTIME_DIR"/bus
@@ -33,13 +47,11 @@ BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
 if [ -z "$BIN" ] && [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
   echo "[sway] no browser installed (setup-omarchy.sh did not finish?)"
+  echo "LINUXDESK_ERROR Chrome is not installed in this rootfs (setup did not finish?)"
   exit 127
 fi
 
-if ! command -v sway >/dev/null 2>&1; then
-  echo "[sway] sway is not installed; starting the i3 desktop instead"
-  exec "$FALLBACK" "$@"
-fi
+command -v sway >/dev/null 2>&1 || nosway "sway is not installed" "$@"
 
 chmod +x /opt/linuxdesk/omarchy/*.sh 2>/dev/null || true
 # bubblewrap cannot sandbox under PRoot, so glycin failed every image (no wallpaper; wofi crashed on Super+Space).
@@ -93,6 +105,7 @@ fi
 [ -f "$CFG" ] || { echo "[sway] $CFG missing, using /etc/sway/config"; CFG=/etc/sway/config; }
 
 XBEFORE=$(ls /tmp/.X11-unix 2>/dev/null)
+echo "LINUXDESK_STAGE_NOW Sway"
 sway -c "$CFG" >/tmp/sway.log 2>&1 &
 SWAY=$!
 
@@ -111,11 +124,11 @@ if [ $up -ne 1 ]; then
   tail -n 15 /tmp/sway.log 2>/dev/null | sed 's/^/[sway]   /'
   kill "$SWAY" 2>/dev/null
   [ -n "$DBUS" ] && kill "$DBUS" 2>/dev/null
-  echo "[sway] starting the i3 desktop instead"
-  exec "$FALLBACK" "$@"
+  nosway "sway $why: $(grep -v '^[[:space:]]*$' /tmp/sway.log 2>/dev/null | tail -n 1 | cut -c1-160)" "$@"
 fi
 export SWAYSOCK="$sock" WAYLAND_DISPLAY="$wl"
 echo "[sway] started (pid $SWAY, $WAYLAND_DISPLAY, config $CFG)"
+echo "LINUXDESK_DESKTOP Sway"
 
 # Fill lorie: size the sway output to the X screen now and whenever RandR changes it (rotation). Then the desktop's
 # zoom: zoom.sh apply sets the scale saved in ~/.config/linuxdesk-zoom (the dock's zoom buttons; 1.5 when none).
@@ -168,6 +181,7 @@ if [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
 ) &
 WATCH=$!
 
+echo "LINUXDESK_STAGE_NOW Chrome"
 echo "[sway] exec $BIN --ozone-platform=wayland $*"
 T0=$(date +%s)
 "$BIN" --ozone-platform=wayland "$@"
@@ -204,12 +218,19 @@ if { [ "${LINUXDESK_SWAY_HOLD:-1}" = 1 ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 
   while kill -0 "$SWAY" 2>/dev/null; do
     if [ -e "$TRIGGER" ]; then
       rm -f "$TRIGGER"
-      [ -n "$BIN" ] && { "$BIN" --ozone-platform=wayland "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
-        echo "[sway] opened $BIN on request ($TRIGGER)"; }
+      if [ -n "$BIN" ]; then
+        echo "LINUXDESK_STAGE_NOW Chrome"
+        "$BIN" --ozone-platform=wayland "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
+        echo "[sway] opened $BIN on request ($TRIGGER)"
+      else
+        echo "LINUXDESK_ERROR Chrome is not installed in this rootfs"
+      fi
     fi
     sleep 2
   done
   echo "[sway] sway exited"
+  # Not the app's Stop (that kills this script first): the desktop ended by itself, so the app says so (a pop-up).
+  echo "LINUXDESK_ERROR Sway exited: $(grep -v '^[[:space:]]*$' /tmp/sway.log 2>/dev/null | tail -n 1 | cut -c1-160)"
   CODE=0
 fi
 swaymsg exit >/dev/null 2>&1

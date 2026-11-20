@@ -66,6 +66,14 @@
     <string name="ld_state_browser_exited">Chromium exited (code %1$d). Long-press the keyboard button → Restart browser.</string>
     <string name="ld_state_stopping">Stopping …</string>
     <string name="ld_state_stopped">Stopped</string>
+    <string name="ld_state_desktop">Starting the desktop …</string>
+    <string name="ld_state_stage">Starting %1$s …</string>
+    <string name="ld_state_running_what">%1$s running</string>
+    <string name="ld_state_desktop_exited">%1$s exited (code %2$d). Stop, then Start again.</string>
+    <string name="ld_err_title">LinuxDesk: something failed</string>
+    <string name="ld_err_show_log">Show log</string>
+    <string name="ld_err_channel">LinuxDesk errors</string>
+    <string name="ld_err_exited_early">The session stopped before the desktop came up (exit %1$d). See the log.</string>
 
     <string name="ld_license">LinuxDesk is free software under the GNU GPL v3 (it embeds Termux:X11\'s lorie X server, GPL-3.0). Linux userspace: Alpine Linux under PRoot (GPL-2.0+). Source: see README.</string>
 </resources>

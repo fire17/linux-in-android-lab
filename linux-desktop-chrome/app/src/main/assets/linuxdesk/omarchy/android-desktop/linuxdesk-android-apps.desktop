@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Android: Refresh apps
+Comment=List this phone's Android apps under Apps
+Exec=omarchy-android apps
+Icon=phone
+Terminal=false
+Categories=Utility;X-Android;

@@ -308,9 +308,14 @@ class SessionService : Service() {
     }
 
     private fun launchBrowser(proot: ProotRuntime, flags: List<String> = browserFlags()) {
-        SessionBus.setState(State.STARTING_BROWSER, getString(R.string.ld_state_browser))
+        // Tami 13:42 (AC5CC9EB): never "Starting Chromium" unless a browser really starts. An Omarchy flavour without
+        // "Open Chrome at Start" boots its desktop; the script's LINUXDESK_STAGE_NOW lines then name each component.
+        val withBrowser = !proot.distro.isArch || settings.openBrowserAtStart
+        SessionBus.setState(State.STARTING_BROWSER,
+            getString(if (withBrowser) R.string.ld_state_browser else R.string.ld_state_desktop))
         SessionBus.log("chromium " + flags.joinToString(" "))
         SessionBus.browserWindowUp = false
+        val st = SessionStatus()   // what this start script really runs (LINUXDESK_STAGE_NOW / LINUXDESK_DESKTOP)
 
         // PulseHost.guestEnv() is empty when PulseAudio is not running, so Chromium then starts exactly as before.
         // LINUXDESK_OPEN_BROWSER: the Omarchy start scripts start Chrome only when 1 (launcher "Open Chrome at Start",
@@ -323,9 +328,20 @@ class SessionService : Service() {
                 p.inputStream.bufferedReader().forEachLine { line ->
                     SessionBus.log(line)
                     if (proot.distro.isArch) OmarchyRun.progress.onLine(line)   // boot stage of the setup screen
+                    when (val e = st.onLine(line)) {
+                        // Until the desktop is up: "Starting <component> …" (state line, overlay, notification). After
+                        // that the status stays put; a later stage (Chrome opened on request) is only logged.
+                        is SessionStatus.Event.Stage -> if (!SessionBus.browserWindowUp && browser === p) {
+                            SessionBus.setState(State.STARTING_BROWSER, getString(R.string.ld_state_stage, e.component))
+                            updateNotification()
+                        }
+                        is SessionStatus.Event.Error -> if (!stopping) SessionErrors.report(e.reason)
+                        else -> {}
+                    }
                     if (line.startsWith("LINUXDESK_WINDOW_UP") && !SessionBus.browserWindowUp) {
                         SessionBus.browserWindowUp = true
-                        SessionBus.setState(State.RUNNING, getString(R.string.ld_state_running))
+                        SessionBus.setState(State.RUNNING, runningText(proot.distro, st))
+                        updateNotification()
                     }
                     // GPU v2: a GPU-process crash pins software rendering and restarts the browser once.
                     if (GpuSession.onBrowserLine(line) && GpuSession.restartWanted() && browser === p && !stopping) {
@@ -337,7 +353,18 @@ class SessionService : Service() {
             val code = try { p.waitFor() } catch (_: Exception) { -1 }
             if (browser === p && !stopping) {
                 browser = null
-                SessionBus.setState(State.BROWSER_EXITED, getString(R.string.ld_state_browser_exited, code))
+                val desktop = st.desktop.takeIf { it.isNotEmpty() && it != "Chrome" }
+                if (code != 0 && !SessionBus.browserWindowUp) {
+                    // Failed before anything was on screen: an error (and a pop-up), not "Chromium exited".
+                    val why = st.lastError.ifEmpty { getString(R.string.ld_err_exited_early, code) }
+                    SessionBus.setState(State.ERROR, why)
+                    if (!st.errorSeen) SessionErrors.report(why)
+                } else if (desktop != null) {
+                    SessionBus.setState(State.BROWSER_EXITED, getString(R.string.ld_state_desktop_exited, desktop, code))
+                } else {
+                    SessionBus.setState(State.BROWSER_EXITED, getString(R.string.ld_state_browser_exited, code))
+                }
+                updateNotification()
             }
         }, "LinuxDeskBrowserLog").apply { isDaemon = true; start() }
         updateNotification()
@@ -618,6 +645,12 @@ class SessionService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
+    /** "Hyprland running", "Sway + Chrome running", "Chromium running" (Alpine); plain "Running" when unknown. */
+    private fun runningText(distro: Distro, st: SessionStatus): String {
+        val name = st.runningName() ?: if (!distro.isArch) "Chromium" else null
+        return if (name != null) getString(R.string.ld_state_running_what, name) else getString(R.string.ld_state_running)
+    }
+
     private fun buildNotification(): Notification {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val open = PendingIntent.getActivity(this, 0, Intent(this, LauncherActivity::class.java), flags)
@@ -628,8 +661,10 @@ class SessionService : Service() {
         val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_desk)
             .setContentTitle(getString(R.string.ld_app_name))
-            .setContentText(getString(R.string.ld_notification_text))
+            .setContentText(notificationText())
             .setOngoing(true)
+            // Updated at every stage and state; low importance + alert once = never a heads-up, sound or flash.
+            .setOnlyAlertOnce(true)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, getString(R.string.ld_restart_browser), restart).build())
             .addAction(Notification.Action.Builder(null, getString(R.string.ld_stop), stop).build())
@@ -652,5 +687,15 @@ class SessionService : Service() {
                 GenieRuntime.stopPendingIntent(this)).build())
         }
         return b.build()
+    }
+
+    /** What really runs now: "Hyprland running" once up, else the current step ("Starting Weston …"). */
+    private fun notificationText(): String {
+        val s = SessionBus.snapshot
+        return when (s.state) {
+            State.STARTING_X, State.WAITING_FOR_DISPLAY, State.STARTING_BROWSER, State.RUNNING, State.BROWSER_EXITED,
+            State.ERROR -> s.message.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }
+            else -> null
+        } ?: getString(R.string.ld_notification_text)
     }
 }

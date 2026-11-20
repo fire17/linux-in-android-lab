@@ -1,0 +1,243 @@
+#!/bin/sh
+# omarchy-android: this phone's own Android apps as windows on the LinuxDesk Omarchy desktop (notes/android-apps/
+# REPORT.md, Proposal 1 / Phase 1). adb talks to the phone's own Wireless debugging over localhost, and every app runs
+# on its own scrcpy virtual display (--new-display --start-app), one scrcpy window per app. Nothing here runs at
+# desktop start: until the user pairs, every subcommand just says what is missing.
+#   omarchy-android setup                 install scrcpy + android-tools, load the Hyprland window rules
+#   omarchy-android pair [<port> <code>]  pair with Wireless debugging (asks for port + code when not given)
+#   omarchy-android connect [<port>]      connect (port found via mDNS when not given), then adb tcpip 5555
+#   omarchy-android status                one line, for a bar module; exit 0 only when a device is connected
+#   omarchy-android apps                  one ~/.local/share/applications/android-<pkg>.desktop per app
+#   omarchy-android launch <pkg> [WxH/dpi]
+#   omarchy-android chrome                launch com.android.chrome
+#   omarchy-android in-terminal <cmd>     run <cmd> in a terminal window (for launcher entries)
+# Installed as /usr/local/bin/omarchy-android by clean/install-shims.sh (and into hypr-bin by start-hyprland.sh),
+# with launcher entries (Pair phone, Refresh apps, Chrome) in /usr/local/share/applications.
+# Failures print `LINUXDESK_ERROR android: <reason>` (the app shows those as pop-ups).
+LD="${LINUXDESK_DIR:-/opt/linuxdesk}"
+HOME="${HOME:-/root}"
+APPS_DIR="$HOME/.local/share/applications"
+ST="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-android"
+RULES="$LD/omarchy/hypr-android.lua"
+TCPIP=127.0.0.1:5555
+
+say() { printf '[omarchy-android] %s\n' "$*"; }
+fail() {
+  printf 'LINUXDESK_ERROR android: %s\n' "$*"
+  command -v notify-send >/dev/null 2>&1 && notify-send "Android apps" "$*" >/dev/null 2>&1
+  exit 1
+}
+need() {
+  command -v adb >/dev/null 2>&1 && command -v scrcpy >/dev/null 2>&1 && return 0
+  fail "scrcpy/adb are not installed: run 'omarchy-android setup'"
+}
+as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
+
+# --- setup -------------------------------------------------------------------------------------------------------
+# A Start that was cut off leaves /var/lib/pacman/db.lck behind (as in setup-omarchy-clean.sh). The desktop's own
+# background installs (start-hyprland.sh) may hold the real lock: wait for those, up to 5 min.
+clear_stale_lock() {
+  n=0
+  while pgrep -x pacman >/dev/null 2>&1 && [ $n -lt 60 ]; do
+    [ $n = 0 ] && say "waiting for another pacman to finish"
+    n=$((n + 1)); sleep 5
+  done
+  if [ -e /var/lib/pacman/db.lck ] && ! pgrep -x pacman >/dev/null 2>&1; then
+    say "removing a stale pacman lock"; as_root rm -f /var/lib/pacman/db.lck
+  fi
+}
+# The Hyprland rules (tag android, tiled) come from one drop-in file. Loaded two ways, both idempotent: a guarded
+# dofile line in the user's looknfeel.lua (next Start), and `hyprctl eval` into the running Hyprland (named rules,
+# so a second load replaces instead of stacking).
+load_rules() {
+  [ -f "$RULES" ] || return 0
+  H=$HOME/.config/hypr
+  F=$H/looknfeel.lua; [ -f "$F" ] || F=$H/hyprland.lua
+  if [ -f "$F" ] && ! grep -qs 'omarchy/hypr-android\.lua' "$F"; then
+    printf '\n-- LinuxDesk: Android app windows (omarchy-android)\npcall(dofile, "%s")\n' "$RULES" >> "$F" \
+      && say "window rules added to $F"
+  fi
+  command -v hyprctl >/dev/null 2>&1 && hyprctl eval "$(cat "$RULES")" >/dev/null 2>&1
+  return 0
+}
+setup() {
+  if ! command -v scrcpy >/dev/null 2>&1 || ! command -v adb >/dev/null 2>&1; then
+    command -v pacman >/dev/null 2>&1 || fail "no pacman here: install scrcpy and android-tools yourself"
+    clear_stale_lock
+    say "installing scrcpy and android-tools"
+    as_root pacman -S --needed --noconfirm scrcpy android-tools \
+      || { clear_stale_lock; as_root pacman -Sy --needed --noconfirm scrcpy android-tools; } \
+      || fail "pacman could not install scrcpy android-tools"
+  fi
+  load_rules
+  say "ready: $(scrcpy --version 2>/dev/null | head -n 1); next: omarchy-android pair"
+}
+
+# --- pair / connect ----------------------------------------------------------------------------------------------
+# mdns_port SERVICE: the port of the first `adb mdns services` line for SERVICE (adb's own mDNS browser).
+mdns_port() {
+  adb mdns services 2>/dev/null | awk -v s="$1" 'index($0, s) { print $NF; exit }' | sed 's/.*://' | grep -E '^[0-9]+$'
+}
+pair() {
+  need
+  port=$1; code=$2
+  if [ -z "$code" ]; then
+    echo "On the phone: Settings > Developer options > Wireless debugging > Pair device with pairing code."
+    echo "(Wireless debugging needs Wi-Fi on. Samsung: Settings > Security > Auto Blocker must be OFF.)"
+    echo "Fold6 tip: open Settings side by side with LinuxDesk so the code stays visible."
+    guess=$(mdns_port _adb-tls-pairing._tcp)
+    printf 'Pairing port%s: ' "${guess:+ [$guess]}"; read -r port; port=${port:-$guess}
+    printf 'Pairing code (6 digits): '; read -r code
+  fi
+  case "$port" in ''|*[!0-9]*) fail "not a port: '$port'" ;; esac
+  case "$code" in ''|*[!0-9]*) fail "not a pairing code: '$code'" ;; esac
+  out=$(adb pair "localhost:$port" "$code" 2>&1); echo "$out"
+  case "$out" in
+    *Successfully*) mkdir -p "$ST" && date +%s > "$ST/paired"; say "paired; connecting"; connect ;;
+    *) fail "pairing failed: $(printf '%s' "$out" | tail -n 1)" ;;
+  esac
+}
+# serial: the device to talk to: 127.0.0.1:5555 (tcpip, survives a Wi-Fi drop) when it is up, else the first device.
+serial() {
+  devs=$(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+  printf '%s\n' "$devs" | grep -qxF "$TCPIP" && { echo "$TCPIP"; return; }
+  printf '%s\n' "$devs" | sed -n 1p
+}
+connect() {
+  need
+  # Already in tcpip mode (the phone keeps it until reboot): one fast try.
+  adb connect "$TCPIP" 2>/dev/null | grep -q '^connected' && { status; return; }
+  port=$1
+  [ -n "$port" ] || port=$(mdns_port _adb-tls-connect._tcp)
+  [ -n "$port" ] || fail "no Wireless debugging port found (is it on? paired?): run 'omarchy-android connect <port>' with the port shown under Wireless debugging"
+  case "$port" in *[!0-9]*) fail "not a port: '$port'" ;; esac
+  out=$(adb connect "localhost:$port" 2>&1); echo "$out"
+  case "$out" in connected*|already*) ;; *) fail "adb connect localhost:$port failed: $out" ;; esac
+  # tcpip 5555 keeps the session when Wi-Fi drops (termux-local-adb pattern; unverified on One UI 7). Optional.
+  if adb -s "localhost:$port" tcpip 5555 >/dev/null 2>&1; then
+    sleep 2; adb connect "$TCPIP" >/dev/null 2>&1 || say "note: $TCPIP did not connect; staying on localhost:$port"
+  fi
+  status
+}
+# Never starts the adb server itself (a bar polls this): without one running it reports from the state file.
+status() {
+  if ! command -v adb >/dev/null 2>&1; then echo "Android: not set up"; return 1; fi
+  if pgrep -x adb >/dev/null 2>&1; then
+    s=$(serial)
+    if [ -n "$s" ]; then
+      m=$(adb -s "$s" shell getprop ro.product.model 2>/dev/null | tr -d '\r')
+      echo "Android: connected ${m:+$m }($s)"; return 0
+    fi
+  fi
+  [ -f "$ST/paired" ] && echo "Android: paired, not connected" || echo "Android: not paired"
+  return 1
+}
+
+# --- apps / launch -----------------------------------------------------------------------------------------------
+# Each app's label is kept in $ST/apps.tsv (pkg<TAB>label) so launch can title its window.
+apps() {
+  need
+  s=$(serial); [ -n "$s" ] || fail "no device connected: run 'omarchy-android connect'"
+  mkdir -p "$ST" "$APPS_DIR" || fail "cannot create $APPS_DIR"
+  # scrcpy 3.x: "[server] INFO: List of apps:" then " * Label   pkg" (system) / " - Label   pkg" (user).
+  list=$(scrcpy --serial="$s" --list-apps 2>&1 | sed -n 's/^ [*-] //p' \
+    | awk '{ p = $NF; $NF = ""; sub(/ +$/, ""); if (p ~ /^[A-Za-z0-9._]+$/) print p "\t" $0 }')
+  [ -n "$list" ] || fail "scrcpy --list-apps returned no apps"
+  printf '%s\n' "$list" > "$ST/apps.tsv"
+  n=0
+  printf '%s\n' "$list" | while IFS='	' read -r pkg label; do
+    label=$(printf '%s' "${label:-$pkg}" | tr -d '\000-\037')
+    {
+      echo "[Desktop Entry]"
+      echo "Type=Application"
+      echo "Version=1.0"
+      echo "Name=$label"
+      echo "Comment=$label (Android app on this phone)"
+      echo "Exec=omarchy-android launch $pkg"
+      echo "Icon=phone"
+      echo "Terminal=false"
+      echo "Categories=Utility;X-Android;"
+      echo "X-LinuxDesk-Android=1"
+    } > "$APPS_DIR/android-$pkg.desktop.tmp" && mv -f "$APPS_DIR/android-$pkg.desktop.tmp" "$APPS_DIR/android-$pkg.desktop"
+  done
+  # Remove entries of apps that are gone, but only files we wrote (the marker key).
+  for f in "$APPS_DIR"/android-*.desktop; do
+    [ -f "$f" ] && grep -qx 'X-LinuxDesk-Android=1' "$f" || continue
+    pkg=${f##*/android-}; pkg=${pkg%.desktop}
+    cut -f1 "$ST/apps.tsv" | grep -qxF -- "$pkg" || { rm -f -- "$f"; n=$((n + 1)); }
+  done
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS_DIR" >/dev/null 2>&1
+  m="$(wc -l < "$ST/apps.tsv" | tr -d ' ') Android apps under Apps ($n stale removed)"
+  say "$m"
+  [ -t 1 ] || { command -v notify-send >/dev/null 2>&1 && notify-send "Android apps" "$m" >/dev/null 2>&1; }
+}
+# Default virtual display: the Hyprland monitor's size (multiple of 8), dpi LINUXDESK_ANDROID_DPI or 320.
+default_size() {
+  dpi=${LINUXDESK_ANDROID_DPI:-320}
+  j=$(hyprctl -j monitors 2>/dev/null)
+  w=$(printf '%s' "$j" | grep -oE '"width": *[0-9]+' | head -n 1 | grep -oE '[0-9]+$')
+  h=$(printf '%s' "$j" | grep -oE '"height": *[0-9]+' | head -n 1 | grep -oE '[0-9]+$')
+  if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge 320 ] && [ "$h" -ge 320 ]; then
+    echo "$((w / 8 * 8))x$((h / 8 * 8))/$dpi"
+  else
+    echo "1080x1920/320"
+  fi
+}
+launch() {
+  pkg=$1; size=$2
+  case "$pkg" in ''|*[!A-Za-z0-9._]*) fail "not a package name: '$pkg'" ;; esac
+  need
+  [ -n "$size" ] || size=$(default_size)
+  printf '%s' "$size" | grep -qE '^[0-9]+x[0-9]+(/[0-9]+)?$' || fail "size must be WxH or WxH/dpi, not '$size'"
+  s=$(serial); [ -n "$s" ] || fail "no device connected: run 'omarchy-android connect'"
+  mkdir -p "$ST"
+  # One scrcpy per app: a second launch of a running one does nothing.
+  pid=$(cat "$ST/$pkg.pid" 2>/dev/null)
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then say "$pkg is already open (pid $pid)"; return 0; fi
+  label=$(awk -F '\t' -v p="$pkg" '$1 == p { print $2; exit }' "$ST/apps.tsv" 2>/dev/null)
+  [ "$pkg" = com.android.chrome ] && label=${label:-Chrome}
+  label=${label:-$pkg}
+  log=/tmp/omarchy-android-$pkg.log
+  command -v hyprctl >/dev/null 2>&1 && [ -f "$RULES" ] && hyprctl eval "$(cat "$RULES")" >/dev/null 2>&1
+  # Wayland first; SDL's Wayland path may fail under nested Hyprland, so an exit within 3 s retries on Xwayland.
+  # The window class is pinned to "scrcpy" for the rules (SDL2 and SDL3 names).
+  for drv in wayland x11; do
+    echo "== $(date '+%F %T') $drv $s $pkg $size" >> "$log"
+    ( trap '' HUP
+      exec env SDL_VIDEODRIVER=$drv SDL_VIDEO_WAYLAND_WMCLASS=scrcpy SDL_VIDEO_X11_WMCLASS=scrcpy SDL_APP_ID=scrcpy \
+        scrcpy --serial="$s" --new-display="$size" --start-app="$pkg" --no-vd-destroy-content \
+        --display-ime-policy=local --no-audio --window-title="$label (Android)" ) >> "$log" 2>&1 < /dev/null &
+    pid=$!
+    t=0
+    while [ $t -lt 6 ] && kill -0 "$pid" 2>/dev/null; do sleep 0.5; t=$((t + 1)); done
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "$pid" > "$ST/$pkg.pid"; say "$label is open ($drv, $size, log $log)"; return 0
+    fi
+    say "scrcpy exited on $drv within 3 s"
+  done
+  fail "$label did not open: $(grep -E 'ERROR|error' "$log" | tail -n 1 | cut -c1-160) (log $log)"
+}
+
+# in-terminal <subcommand>: run it in a terminal window that stays open until Enter (the launcher's .desktop
+# entries, omarchy/android-desktop/). setup runs first when scrcpy is missing. Terminal: xdg-terminal-exec (Omarchy's,
+# or LinuxDesk's hypr-shim), else foot / alacritty.
+in_terminal() {
+  cmd=$*
+  set -- sh -c 'command -v scrcpy >/dev/null 2>&1 || "$0" setup; "$0" "$@"; echo; echo "Press Enter to close"; read -r _' \
+    "$(command -v omarchy-android 2>/dev/null || echo "$0")" "$@"
+  for t in xdg-terminal-exec foot; do command -v $t >/dev/null 2>&1 && exec $t "$@"; done
+  command -v alacritty >/dev/null 2>&1 && exec alacritty -e "$@"
+  fail "no terminal (xdg-terminal-exec, foot or alacritty) to run 'omarchy-android $cmd' in"
+}
+
+case "${1:-}" in
+  in-terminal) shift; in_terminal "$@" ;;
+  setup) setup ;;
+  pair) shift; pair "${1:-}" "${2:-}" ;;
+  connect) shift; connect "${1:-}" ;;
+  status) status ;;
+  apps) apps ;;
+  launch) shift; launch "${1:-}" "${2:-}" ;;
+  chrome) shift; launch com.android.chrome "${1:-}" ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; [ -z "${1:-}" ] || exit 2 ;;
+esac

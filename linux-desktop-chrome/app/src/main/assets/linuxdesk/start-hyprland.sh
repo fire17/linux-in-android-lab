@@ -14,8 +14,12 @@
 #   - the plugin index ($XDG_RUNTIME_DIR/omarchy-plugin-scan.txt) is written before Hyprland starts (OMARCHY_PROOT=1);
 #   - Weston WINDOWED (--fullscreen hangs before making its socket; windowed it fills lorie's screen in <= 1 s);
 #   - Hyprland: SHM present path, scale 1 (2179 px is prime), the omarchy-android env.
-# Never a black screen: if any step fails, only the processes this script started are stopped and start-sway.sh runs
-# with the same argv (it falls back to i3 itself when sway is missing).
+# No silent fallback (Tami 13:42, AC5CC9EB: "a separate option and NOT a fallback ... I can't understand what is actually
+# running"): if any step fails, only the processes this script started are stopped, one `LINUXDESK_ERROR <reason>` line
+# goes to the app (a pop-up) and the script exits 1. Sway is its own launcher option. LINUXDESK_ALLOW_FALLBACK=1 (default
+# OFF) brings back the old ladder: start-sway.sh with the same argv (it falls back to i3 itself when sway is missing).
+# Status markers for the app: LINUXDESK_STAGE_NOW <component> as each one starts ("Starting <component> …") and
+# LINUXDESK_DESKTOP <name> once the compositor answers ("<name> running" after LINUXDESK_WINDOW_UP).
 # Test hooks (Mac dry run, notes/hyprland/hyprdesk-test.sh): LINUXDESK_DIR, LINUXDESK_HYPR_ROOT, LINUXDESK_HYPR_RT,
 # LINUXDESK_MEMINFO, LINUXDESK_HYPR_WAIT (seconds per wait, default 30 / 20).
 export DISPLAY="${DISPLAY:-:0}"
@@ -45,11 +49,19 @@ stop_ours() {
   done
   PIDS=""; WATCH=""
 }
+stage() { echo "LINUXDESK_STAGE_NOW $*"; }
+last_line() { grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -n 1 | cut -c1-160; }
 fallback() {  # fallback <why> "$@"
   why=$1; shift
-  say "$why; starting the sway desktop instead"
+  if [ "${LINUXDESK_ALLOW_FALLBACK:-0}" = 1 ]; then
+    say "$why; starting the sway desktop instead (LINUXDESK_ALLOW_FALLBACK=1)"
+    stop_ours
+    exec "$FALLBACK" "$@"
+  fi
+  say "$why; no other desktop is started (Sway is its own option; LINUXDESK_ALLOW_FALLBACK=1 = the old fallback)"
   stop_ours
-  exec "$FALLBACK" "$@"
+  echo "LINUXDESK_ERROR Hyprland desktop: $why"
+  exit 1
 }
 
 # ---- 1. memory gate (a2-launch.sh gate) ------------------------------------------------------------------------------
@@ -66,6 +78,7 @@ BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
 if [ -z "$BIN" ] && [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ]; then
   say "no browser installed (setup-omarchy.sh did not finish?)"
+  echo "LINUXDESK_ERROR Chrome is not installed in this rootfs (setup did not finish?)"
   exit 127
 fi
 [ -x "$HB/Hyprland" ] || fallback "no patched Hyprland at $HB/Hyprland" "$@"
@@ -205,6 +218,7 @@ if [ "${LINUXDESK_HYPR_SHIMS:-1}" = 1 ]; then
   shim "$LD/clean/systemd-inhibit-shim.sh" systemd-inhibit
   shim "$LD/clean/loginctl-shim.sh" loginctl
   shim "$LD/clean/systemd-cat-shim.sh" systemd-cat
+  shim "$LD/omarchy/omarchy-android" omarchy-android   # Android apps as windows (opt-in: idle until paired)
   say "session shims: $(ls "$HSHIM" 2>/dev/null | tr '\n' ' ')"
   # Folders open in Thunar: Omarchy's mimeapps.list names Nautilus, which is not installed (xdg-open of a folder,
   # "Open folder" in apps and the shell). Only that one default changes, and only while Nautilus is missing.
@@ -227,6 +241,7 @@ GEO=$(xdotool getdisplaygeometry 2>/dev/null)
 W=${GEO% *}; H=${GEO#* }
 case "$W$H" in ''|*[!0-9]*) W=968; H=2179 ;; esac
 ICD=$(ls /usr/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1)
+stage Weston
 # shellcheck disable=SC2086  # AS is a command prefix, intended to split
 setsid $AS env XDG_RUNTIME_DIR="$RT" DISPLAY="$DISPLAY" MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink \
   VK_ICD_FILENAMES="$ICD" weston -B x11 --renderer=gl --shell=kiosk --socket=wayland-omarchy \
@@ -239,8 +254,8 @@ while [ ! -S "$RT/wayland-omarchy" ] && [ $i -lt $((WWAIT * 2)) ]; do
 done
 if [ ! -S "$RT/wayland-omarchy" ]; then
   say "weston: no socket after $((i / 2)) s; last lines of /tmp/hyprland-weston.log:"
-  tail -n 10 /tmp/hyprland-weston.log 2>/dev/null | sed 's/^/[hyprland]   /'
-  fallback "weston did not come up" "$@"
+  tail -n 12 /tmp/hyprland-weston.log 2>/dev/null | sed 's/^/[hyprland]   /'
+  fallback "Weston did not come up: $(last_line /tmp/hyprland-weston.log)" "$@"
 fi
 say "weston up (pid $WPID, ${W}x${H}, after $((i / 2)) s)"
 
@@ -276,6 +291,7 @@ hyprctl() {
   sig=$(ls -t "$RT/hypr" 2>/dev/null | head -n 1)
   XDG_RUNTIME_DIR=$RT HYPRLAND_INSTANCE_SIGNATURE=$sig LD_LIBRARY_PATH=$LDP "$HB/hyprctl" "$@"
 }
+stage Hyprland
 start_hyprland
 i=0; up=0
 while [ $i -lt $((HWAIT * 2)) ]; do
@@ -287,8 +303,10 @@ if [ $up -ne 1 ]; then
   if kill -0 "$HPID" 2>/dev/null; then why="not answering hyprctl after $HWAIT s"; else why="exited"; fi
   say "Hyprland $why; last lines of /tmp/hyprland.log:"
   tail -n 12 /tmp/hyprland.log 2>/dev/null | sed 's/^/[hyprland]   /'
-  fallback "Hyprland did not come up" "$@"
+  fallback "Hyprland $why: $(last_line /tmp/hyprland.log)" "$@"
 fi
+echo "LINUXDESK_DESKTOP Hyprland"
+stage "Omarchy shell"
 # Hide the two warning bars Tami saw (06:13): we start Hyprland ourselves on purpose (no systemd, so no
 # start-hyprland watchdog), and hyprland-guiutils may still be installing. The Lua config refuses `keyword`; `eval` works
 # (verified live 06:18: both options read true and the bars were gone).
@@ -356,6 +374,7 @@ done
 WATCH=$!
 
 XBEFORE=$(ls /tmp/.X11-unix 2>/dev/null)
+stage Chrome
 say "exec $BIN --ozone-platform=wayland $*"
 T0=$(date +%s)
 XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$WL "$BIN" --ozone-platform=wayland "$@"
@@ -395,7 +414,8 @@ done
 [ "$GL" = 1 ] || BARGS=" --disable-gpu$BARGS"
 open_browser() {
   rm -f "$TRIGGER"
-  [ -n "$BIN" ] || { say "note: no browser installed to open"; return 0; }
+  [ -n "$BIN" ] || { say "note: no browser installed to open"; echo "LINUXDESK_ERROR Chrome is not installed in this rootfs"; return 0; }
+  stage Chrome
   hyprctl eval "hl.exec_cmd([[$BIN --ozone-platform=wayland$BARGS > /tmp/linuxdesk-browser.log 2>&1]])" >/dev/null 2>&1 \
     && say "opened $BIN on request ($TRIGGER)" || say "note: could not open $BIN on request"
 }
@@ -425,6 +445,8 @@ if { [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 
     sleep 2
   done
   say "Hyprland exited"
+  # Not the app's Stop (that kills this script first): the desktop ended by itself, so the app says so (a pop-up).
+  echo "LINUXDESK_ERROR Hyprland exited: $(last_line /tmp/hyprland.log)"
   CODE=0
 fi
 stop_ours

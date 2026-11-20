@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Android: Pair phone
+Comment=Pair this phone's Wireless debugging so its apps open as windows
+Exec=omarchy-android in-terminal pair
+Icon=phone
+Terminal=false
+Categories=Utility;X-Android;

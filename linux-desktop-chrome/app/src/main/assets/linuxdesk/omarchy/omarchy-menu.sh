@@ -2,7 +2,7 @@
 # The Omarchy Menu for the LinuxDesk sway desktop (Super+Space), like Omarchy 3's: Apps / Learn / Style / Setup /
 # Install / Update / System. Omarchy's own omarchy-menu, omarchy-theme-set and walker are not in ALARM, so this is
 # a wofi --dmenu tree (checked on the phone, 2026-11-20: only /usr/bin/omarchy-nvim-* exist).
-#   omarchy-menu.sh [apps|learn|style|theme|setup|install|update|system]   jump straight to a submenu
+#   omarchy-menu.sh [apps|android|learn|style|theme|setup|install|update|system]   jump straight to a submenu
 # Escape or an empty choice at any level exits. User input is never eval'd: it is passed as "$1" or validated first.
 # Real Omarchy commands: the omarchy 4.5 package ([omarchy] repo) is built for Hyprland, so having it installed does
 # not mean a script works on sway under PRoot. A leaf uses a real omarchy-* command only when its name is listed (one
@@ -238,6 +238,21 @@ install() {
   esac
 }
 
+# --- Android apps ------------------------------------------------------------------------------------------------
+# This phone's own apps as windows (omarchy-android: adb to the phone's Wireless debugging + one scrcpy per app).
+# Pair and Connect run in a terminal (pairing asks for port + code there); setup is run first when scrcpy is missing.
+ANDROID="${LINUXDESK_ANDROID:-$(command -v omarchy-android 2>/dev/null)}"
+ANDROID="${ANDROID:-$D/omarchy-android}"
+android() {
+  st=$(sh "$ANDROID" status 2>/dev/null | head -n 1)
+  case $(menu "${st:-Android apps}" "󰄜  Pair phone" "󰌘  Connect" "󰑓  Refresh app list" "  Open Android Chrome") in
+    *Pair*) in_terminal 'command -v scrcpy >/dev/null || sh "$1" setup; sh "$1" pair' "$ANDROID" ;;
+    *Connect) in_terminal 'command -v scrcpy >/dev/null || sh "$1" setup; sh "$1" connect' "$ANDROID" ;;
+    *Refresh*) notify "$(sh "$ANDROID" apps 2>&1 | tail -n 1)" ;;
+    *Chrome) out=$(sh "$ANDROID" chrome 2>&1) || notify "$(printf '%s\n' "$out" | tail -n 1)" ;;
+  esac
+}
+
 # --- Update / System ---------------------------------------------------------------------------------------------
 update() {
   try_real omarchy-update || in_terminal 'pacman -Syu'
@@ -254,7 +269,8 @@ system() {
 }
 
 main_menu() {
-  case $(menu "Omarchy" "󰀻  Apps" "󰧑  Learn" "  Style" "  Setup" "󰉉  Install" "  Update" "  System") in
+  case $(menu "Omarchy" "󰀻  Apps" "  Android apps" "󰧑  Learn" "  Style" "  Setup" "󰉉  Install" "  Update" "  System") in
+    *"Android apps") android ;;
     *Apps) exec wofi --show drun ;;
     *Learn) learn ;;
     *Style) style ;;
@@ -274,6 +290,7 @@ elif [ -z "${1:-}" ] && has_real omarchy-menu; then
 fi
 case "${1:-}" in
   apps) exec wofi --show drun ;;
+  android) android ;;
   learn) learn ;;
   style) style ;;
   theme) theme ;;

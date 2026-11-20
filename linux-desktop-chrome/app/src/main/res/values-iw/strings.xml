@@ -63,4 +63,12 @@
     <string name="ld_state_browser_exited">‏Chromium נסגר (קוד %1$d). לחיצה ארוכה על כפתור המקלדת ← הפעלה מחדש של הדפדפן.</string>
     <string name="ld_state_stopping">עוצר …</string>
     <string name="ld_state_stopped">נעצר</string>
+    <string name="ld_state_desktop">מפעיל את שולחן העבודה …</string>
+    <string name="ld_state_stage">מפעיל את %1$s …</string>
+    <string name="ld_state_running_what">%1$s פועל</string>
+    <string name="ld_state_desktop_exited">‏%1$s נסגר (קוד %2$d). עצירה ואז הפעלה מחדש.</string>
+    <string name="ld_err_title">LinuxDesk: משהו נכשל</string>
+    <string name="ld_err_show_log">הצגת הלוג</string>
+    <string name="ld_err_channel">שגיאות LinuxDesk</string>
+    <string name="ld_err_exited_early">הסשן נעצר לפני ששולחן העבודה עלה (קוד %1$d). פרטים בלוג.</string>
 </resources>

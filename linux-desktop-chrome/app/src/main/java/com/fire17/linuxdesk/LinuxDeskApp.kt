@@ -26,6 +26,8 @@ class LinuxDeskApp : LorieApp() {
             GenieWindow.install(this)
             // Foreground-only microphone: SessionService pauses capture when no LinuxDesk screen is on.
             com.fire17.linuxdesk.audio.MicForeground.install(this)
+            // Session errors (LINUXDESK_ERROR, a start script that died before the desktop came up) as pop-ups.
+            SessionErrors.install(this)
             // Storage delete gate: after a process death, put half-finished proposals back in a safe state.
             Thread({ try { Proposals.recover(this) } catch (_: Throwable) {} }, "ld-proposals-recover")
                 .apply { isDaemon = true; start() }

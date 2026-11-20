@@ -31,4 +31,13 @@ fi
 # bubblewrap (glycin image loaders, xdg-desktop-portal): the existing LinuxDesk shim, shared with the other distro.
 [ -f /opt/linuxdesk/omarchy/bwrap-shim.sh ] && { cmp -s /opt/linuxdesk/omarchy/bwrap-shim.sh "$D/bwrap" 2>/dev/null \
   || install -m 755 /opt/linuxdesk/omarchy/bwrap-shim.sh "$D/bwrap"; }
+# omarchy-android (this phone's Android apps as windows; does nothing until the user pairs): a helper, not a shim.
+[ -f /opt/linuxdesk/omarchy/omarchy-android ] && { cmp -s /opt/linuxdesk/omarchy/omarchy-android "$D/omarchy-android" \
+  2>/dev/null || install -m 755 /opt/linuxdesk/omarchy/omarchy-android "$D/omarchy-android"; }
+# Its launcher entries (Omarchy's Quickshell launcher reads .desktop files; /usr/local/share is on XDG_DATA_DIRS).
+mkdir -p /usr/local/share/applications
+for f in /opt/linuxdesk/omarchy/android-desktop/linuxdesk-android-*.desktop; do
+  [ -f "$f" ] || continue
+  cmp -s "$f" "/usr/local/share/applications/${f##*/}" 2>/dev/null || install -m 644 "$f" "/usr/local/share/applications/${f##*/}"
+done
 exit $rc

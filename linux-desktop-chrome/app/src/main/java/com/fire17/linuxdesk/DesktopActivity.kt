@@ -95,7 +95,10 @@ class DesktopActivity : MainActivity(), SessionBus.Listener {
     override fun onState(s: SessionBus.Snapshot) {
         val st = status ?: return
         when (s.state) {
-            SessionBus.State.RUNNING -> st.visibility = View.GONE
+            // Up: no status pill over the desktop (the notification says what runs); errors pop up (SessionErrors).
+            SessionBus.State.RUNNING, SessionBus.State.ERROR -> st.visibility = View.GONE
+            // Tami 13:42: not "connecting the display" on the display itself; the pill names real components only.
+            SessionBus.State.STARTING_X, SessionBus.State.WAITING_FOR_DISPLAY -> st.visibility = View.GONE
             SessionBus.State.STOPPED -> finish()
             else -> {
                 st.visibility = View.VISIBLE

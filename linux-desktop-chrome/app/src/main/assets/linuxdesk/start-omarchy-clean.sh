@@ -3,7 +3,10 @@
 # PRoot. Same argv contract as start-omarchy.sh / start-sway.sh / start-browser.sh: all arguments are browser flags
 # plus the URL (ChromiumFlags.kt). Exits with the browser's code; proot --kill-on-exit then ends the session.
 #
-# Ladder, never a black screen (each rung only if the one above did not come up within its timeout):
+# The REAL Omarchy session only (Tami 13:42, AC5CC9EB: "a separate option and NOT a fallback ... I can't understand what
+# is actually running"): when rung A does not come up, the script prints one `LINUXDESK_ERROR <reason>` line (the app
+# shows it as a pop-up) and exits 1; nothing else starts. LINUXDESK_ALLOW_FALLBACK=1 (default OFF) brings back the old
+# ladder (each rung only if the one above did not come up within its timeout):
 #   A. the REAL Omarchy session: Weston (x11 backend on lorie, pixman) -> Hyprland nested in it (the patched SHM
 #      stack from `setup-omarchy-clean.sh hypr-stack`; stock Hyprland cannot allocate without /dev/dri) -> the Omarchy
 #      shell (Quickshell, software Qt Quick) through Omarchy's own autostart.lua -> Chrome as a Wayland client.
@@ -11,7 +14,9 @@
 #   B. sway on lorie (pixman), with the real omarchy-* tools on PATH and the Omarchy theme colours (start-sway.sh's
 #      proven path). Used when there is no patched stack, or Weston / Hyprland did not come up.
 #   C. Chrome alone on lorie X11 (when neither compositor exists).
-# LINUXDESK_CLEAN_DESKTOP=hyprland|sway|chrome forces a rung (for tests).
+# LINUXDESK_CLEAN_DESKTOP=hyprland|sway|chrome forces a rung (for tests; a forced rung does not fall back either).
+# Status markers for the app: LINUXDESK_STAGE_NOW <component> as each one starts ("Starting <component> …") and
+# LINUXDESK_DESKTOP <name> once the compositor answers ("<name> running" after LINUXDESK_WINDOW_UP).
 export DISPLAY="${DISPLAY:-:0}"
 export LANG="${LANG:-C.UTF-8}"
 U=desk
@@ -23,6 +28,10 @@ mkdir -p "$RT" && chmod 700 "$RT" && chown 1000:1000 "$RT" 2>/dev/null
 # proot --kill-on-exit ended the last session's compositors; their sockets are stale now.
 rm -f "$RT"/wayland-* "$RT"/hypr/*/.socket*.sock "$RT"/bus 2>/dev/null
 say() { echo "[omarchy] $*"; }
+stage() { echo "LINUXDESK_STAGE_NOW $*"; }
+last_line() { grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -n 1 | cut -c1-160; }
+FAIL=""
+nohypr() { FAIL=$1; say "clean: $1"; return 1; }   # nohypr <why>: rung A did not come up
 # Run as the Omarchy user (uid 1000) without PAM: setpriv (util-linux, in base). Under PRoot -0 the uid is faked, so
 # this only matters to programs that check getuid() (Hyprland warns as root). Falls back to root when it fails.
 as_user() {
@@ -39,7 +48,7 @@ while [ ! -e /tmp/.X11-unix/X0 ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i + 1)); d
 
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
-[ -n "$BIN" ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ] || { say "no browser installed (setup-omarchy-clean.sh did not finish?)"; exit 127; }
+[ -n "$BIN" ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 1 ] || { say "no browser installed (setup-omarchy-clean.sh did not finish?)"; echo "LINUXDESK_ERROR Chrome is not installed in this rootfs (setup did not finish?)"; exit 127; }
 
 # The app refreshes /opt/linuxdesk every Start: put the current shims in place (systemctl, uwsm, sudo, systemd-cat).
 sh /opt/linuxdesk/clean/install-shims.sh || say "note: the PRoot shims could not be refreshed"
@@ -97,8 +106,8 @@ if [ ! -f /etc/linuxdesk/clean-hypr-stack-v1 ] && [ ! -f /etc/linuxdesk/clean-no
   ) &
 fi
 try_hyprland() {
-  [ -x "$HS/hyprland/bin/Hyprland" ] || { say "clean: no patched Hyprland stack (run: setup-omarchy-clean.sh hypr-stack); using sway"; return 1; }
-  command -v weston >/dev/null 2>&1 || { say "clean: weston missing; using sway"; return 1; }
+  [ -x "$HS/hyprland/bin/Hyprland" ] || { nohypr "no patched Hyprland stack yet (setup-omarchy-clean.sh hypr-stack; it downloads in the background)"; return 1; }
+  command -v weston >/dev/null 2>&1 || { nohypr "weston is not installed"; return 1; }
   # A library missing from the bundle's link set kills Hyprland at load (Tami 11:38: libxcb-errors.so.0 -> sway).
   # Install the ALARM package that owns it, then re-check; still missing -> say which, and use sway.
   hl=$HS/aquamarine/lib:$HS/compat/lib
@@ -111,14 +120,15 @@ try_hyprland() {
       [ -n "$p" ] && { pacman -S --noconfirm --needed "$p" >/dev/null 2>&1 && say "clean: installed $p (for $l)" || say "clean: could not install $p (for $l)"; }
     done
     ml=$(LD_LIBRARY_PATH=$hl ldd "$HS/hyprland/bin/Hyprland" 2>/dev/null | awk '/not found/ {print $1}')
-    [ -z "$ml" ] || { say "clean: Hyprland still misses $(echo $ml); using sway"; return 1; }
+    [ -z "$ml" ] || { nohypr "Hyprland still misses $(echo $ml)"; return 1; }
   fi
   # Memory: Weston + Hyprland + the shell + Chrome need headroom (Tami's rule: MemAvailable >= 2.5 GB).
   avail=$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo 2>/dev/null)
-  if [ -n "$avail" ] && [ "$avail" -lt 2621440 ]; then say "clean: MemAvailable $((avail / 1024)) MB < 2560 MB; using sway (lighter)"; return 1; fi
+  if [ -n "$avail" ] && [ "$avail" -lt 2621440 ]; then nohypr "not enough memory: MemAvailable $((avail / 1024)) MB < 2560 MB"; return 1; fi
 
   # Weston: the Wayland host on lorie. pixman (lorie has no DRI3, so gl/zink cannot import client buffers: A2 23:28).
   rm -f "$RT/wayland-omarchy" "$RT/wayland-omarchy.lock"
+  stage Weston
   # WINDOWED, never --fullscreen: on lorie (no _NET_WM_STATE_FULLSCREEN) weston hangs before creating its socket, so
   # this always timed out and fell back to sway (Tami 12:29: clean-weston.log ends at "Output ... color profile").
   # start-hyprland.sh learned this at 02:49; windowed at W x H it still fills lorie's screen. Poll 30 s, not 10.
@@ -126,7 +136,12 @@ try_hyprland() {
     --socket=wayland-omarchy --width=$W --height=$Hh --scale=1 --idle-time=0 >/tmp/clean-weston.log 2>&1 &
   WPID=$!; PIDS="$PIDS $WPID"
   i=0; while [ ! -S "$RT/wayland-omarchy" ] && [ $i -lt 120 ]; do kill -0 $WPID 2>/dev/null || break; sleep 0.25; i=$((i + 1)); done
-  [ -S "$RT/wayland-omarchy" ] || { say "clean: weston did not come up:"; tail -n 8 /tmp/clean-weston.log | sed 's/^/[omarchy]   /'; return 1; }
+  if [ ! -S "$RT/wayland-omarchy" ]; then
+    say "clean: weston did not come up; last lines of /tmp/clean-weston.log:"
+    tail -n 12 /tmp/clean-weston.log | sed 's/^/[omarchy]   /'
+    kill $WPID 2>/dev/null; PIDS=""
+    nohypr "Weston did not come up: $(last_line /tmp/clean-weston.log)"; return 1
+  fi
   say "clean: weston up (pid $WPID, ${W}x${Hh})"
 
   # Hyprland: the omarchy-android SHM env (A2 v2, proven 2026-11-19), the real Omarchy config from /etc/skel.
@@ -166,7 +181,8 @@ try_hyprland() {
   HENV="$HENV HYPRLAND_EGL_SURFACELESS=1 HYPRLAND_NO_SD_NOTIFY=1 HYPRLAND_NO_SD_VARS=1 HYPRLAND_NO_RT=1"
   HENV="$HENV PATH=$HS/hyprland/bin:/usr/local/bin:/usr/bin:/bin XDG_DATA_DIRS=$HS/hyprland/share:/usr/local/share:/usr/share"
   CFG=$H/.config/hypr/hyprland.lua
-  [ -f "$CFG" ] || { say "clean: $CFG missing (setup stage 7?); using sway"; return 1; }
+  [ -f "$CFG" ] || { kill $WPID 2>/dev/null; PIDS=""; nohypr "$CFG missing (setup stage 7?)"; return 1; }
+  stage Hyprland
   # shellcheck disable=SC2086  # HENV is a list of VAR=value words, intended
   as_user env -u DISPLAY $HENV dbus-run-session --config-file=$H/.config/omarchy/proot-session-bus.conf \
     "$HS/hyprland/bin/Hyprland" --config "$CFG" >/tmp/clean-hyprland.log 2>&1 &
@@ -182,9 +198,11 @@ try_hyprland() {
     say "clean: Hyprland did not come up; last lines of /tmp/clean-hyprland.log:"
     tail -n 12 /tmp/clean-hyprland.log | sed 's/^/[omarchy]   /'
     kill $HPID $WPID 2>/dev/null; PIDS=""
-    return 1
+    nohypr "Hyprland did not come up: $(last_line /tmp/clean-hyprland.log)"; return 1
   fi
   say "clean: Hyprland up (pid $HPID); the Omarchy shell starts from autostart.lua"
+  echo "LINUXDESK_DESKTOP Hyprland"
+  stage "Omarchy shell"
   # hyprctl / Wayland env for the rest of this script (the watcher and Chrome).
   export WAYLAND_DISPLAY=$(ls "$RT" | grep -E '^wayland-[0-9]+$' | head -n 1)
   hyprctl() { LD_LIBRARY_PATH=$LDP "$HS/hyprland/bin/hyprctl" "$@"; }
@@ -199,13 +217,22 @@ try_hyprland() {
     while kill -0 $HPID 2>/dev/null; do
       if [ -e "$TRIGGER" ]; then
         rm -f "$TRIGGER"
-        [ -n "$BIN" ] && { "$BIN" --ozone-platform=wayland "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
-          say "opened $BIN on request ($TRIGGER)"; }
+        if [ -n "$BIN" ]; then
+          stage Chrome
+          "$BIN" --ozone-platform=wayland "$@" > /tmp/linuxdesk-browser.log 2>&1 < /dev/null &
+          say "opened $BIN on request ($TRIGGER)"
+        else
+          echo "LINUXDESK_ERROR Chrome is not installed in this rootfs"
+        fi
       fi
       sleep 2
     done
-    cleanup; say "Hyprland exited"; exit 0
+    cleanup; say "Hyprland exited"
+    # Not the app's Stop (that kills this script first): the desktop ended by itself, so the app says so (a pop-up).
+    echo "LINUXDESK_ERROR Hyprland exited: $(last_line /tmp/clean-hyprland.log)"
+    exit 0
   fi
+  stage Chrome
   echo "[omarchy] exec $BIN --ozone-platform=wayland (Hyprland)"
   watch_window hyprctl
   # Chrome runs as root like on the other two distros (deskd's CDP pipe and flags unchanged), as a Wayland client.
@@ -213,11 +240,10 @@ try_hyprland() {
   "$BIN" --ozone-platform=wayland "$@"
   CODE=$?
   # Died at once without ever showing a window (the watcher still runs): this compositor is no good for Chrome.
-  # Tear it down and let the caller drop to sway, rather than leave an empty Hyprland on screen.
+  # Tear it down (the caller reports it, or drops to sway with LINUXDESK_ALLOW_FALLBACK=1), never an empty Hyprland.
   if [ $CODE -ne 0 ] && [ $(( $(date +%s) - T0 )) -lt 10 ] && kill -0 "$WATCH" 2>/dev/null; then
-    say "clean: $BIN exited with code $CODE on Hyprland before any window; falling back to sway"
     cleanup; PIDS=""; unset WAYLAND_DISPLAY
-    return 1
+    nohypr "$BIN exited with code $CODE on Hyprland before any window"; return 1
   fi
   cleanup
   say "$BIN exited with code $CODE"
@@ -226,8 +252,8 @@ try_hyprland() {
 
 # ---------------------------------------------------------------------------------------------------------------- B
 try_sway() {
-  command -v sway >/dev/null 2>&1 || { say "clean: sway missing"; return 1; }
-  [ -f /opt/linuxdesk/start-sway.sh ] || return 1
+  command -v sway >/dev/null 2>&1 || { FAIL="sway is not installed"; say "clean: sway missing"; return 1; }
+  [ -f /opt/linuxdesk/start-sway.sh ] || { FAIL="/opt/linuxdesk/start-sway.sh is missing"; return 1; }
   # start-sway.sh is the proven sway path (pixman on lorie, waybar, fit + rotation, XWayland retry). Here it runs
   # with the real omarchy-* tools on PATH (they live in /usr/bin already) and our shims ahead of them. If sway does
   # not come up, start-sway.sh execs start-omarchy.sh; i3 is not installed in this rootfs, so that script starts
@@ -238,8 +264,10 @@ try_sway() {
 
 # ---------------------------------------------------------------------------------------------------------------- C
 chrome_alone() {
-  say "clean: no compositor came up; Chrome alone on X11 (Stop and Start again to retry the desktop)"
-  [ -n "$BIN" ] || { say "no browser installed either"; exit 127; }
+  say "clean: Chrome alone on X11, no desktop (Stop and Start again to retry the desktop)"
+  [ -n "$BIN" ] || { say "no browser installed either"; echo "LINUXDESK_ERROR Chrome is not installed in this rootfs"; exit 127; }
+  echo "LINUXDESK_DESKTOP Chrome"
+  stage Chrome
   watch_window xdotool
   "$BIN" --ozone-platform=x11 --start-maximized "$@"
   CODE=$?
@@ -248,10 +276,18 @@ chrome_alone() {
   exit $CODE
 }
 
+# fail <what>: the one line the app pops up, then exit nonzero (no other desktop is started).
+fail() {
+  say "$1: ${FAIL:-unknown reason}; no other desktop is started (LINUXDESK_ALLOW_FALLBACK=1 = the old fallback)"
+  echo "LINUXDESK_ERROR $1: ${FAIL:-unknown reason}"
+  exit 1
+}
 case "${LINUXDESK_CLEAN_DESKTOP:-}" in
-  sway) try_sway "$@"; chrome_alone "$@" ;;
+  sway) try_sway "$@"; [ "${LINUXDESK_ALLOW_FALLBACK:-0}" = 1 ] && chrome_alone "$@"; fail "Sway did not start" ;;
   chrome) chrome_alone "$@" ;;
 esac
 try_hyprland "$@"
+[ "${LINUXDESK_ALLOW_FALLBACK:-0}" = 1 ] || fail "Hyprland did not start"
+say "clean: LINUXDESK_ALLOW_FALLBACK=1: the old ladder (sway, then Chrome alone)"
 try_sway "$@"
 chrome_alone "$@"

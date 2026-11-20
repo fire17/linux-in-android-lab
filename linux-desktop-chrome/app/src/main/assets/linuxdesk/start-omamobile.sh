@@ -5,7 +5,8 @@
 # Omarchy's config + Omarchy Mobile's phone.lua (looknfeel.lua dofile's it; setup-omamobile.sh stage 6), and Omarchy's
 # shell comes up with the phone plugins: status bar, home screens, app drawer, switcher, back edge, quick settings.
 #
-# Like a phone, the session opens on the HOME SCREEN: Chrome is NOT started (it is in the app drawer, with LinuxDesk's
+# Like a phone, the session opens on its LOCK SCREEN (Tami 13:32; section 2b: swipe up, no PIN, no fingerprint), then
+# the HOME SCREEN: Chrome is NOT started (it is in the app drawer, with LinuxDesk's
 # flags in ~/.config/chrome-flags.conf). LINUXDESK_OPEN_BROWSER=1 starts it as well, start-hyprland.sh style.
 # The session holds until Hyprland exits (or the app's Stop); same argv contract as every start script (browser flags +
 # URL, ChromiumFlags.kt), used for the drawer's Chrome flags and for the never-black fallback (Chrome alone on X11).
@@ -18,7 +19,8 @@
 #
 # Knobs: LINUXDESK_OMAMOBILE_SCALE (default 2), LINUXDESK_OMAMOBILE_PORTRAIT=0 (use the whole display when it is
 # landscape), LINUXDESK_WESTON_RENDERER (gl = start-hyprland.sh's proven zink path, default; pixman),
-# LINUXDESK_OPEN_BROWSER=1 (or LINUXDESK_OMAMOBILE_CHROME=1), LINUXDESK_HYPR_HOLD=0 (end with Chrome, the old contract).
+# LINUXDESK_OPEN_BROWSER=1 (or LINUXDESK_OMAMOBILE_CHROME=1), LINUXDESK_HYPR_HOLD=0 (end with Chrome, the old contract),
+# LINUXDESK_OMAMOBILE_LOCK=0 (no lock screen at Start).
 # Test hooks as start-hyprland.sh: LINUXDESK_DIR, LINUXDESK_HYPR_ROOT, LINUXDESK_HYPR_RT, LINUXDESK_MEMINFO,
 # LINUXDESK_HYPR_WAIT.
 export DISPLAY="${DISPLAY:-:0}"
@@ -48,10 +50,21 @@ stop_ours() {
 }
 BIN=""
 for b in google-chrome-stable chromium; do command -v "$b" >/dev/null 2>&1 && { BIN=$b; break; }; done
-# Never a black screen: Chrome alone on lorie X11 (this rootfs has no sway).
+stage() { echo "LINUXDESK_STAGE_NOW $*"; }   # the app shows "Starting <component> …"
+last_line() { grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -n 1 | cut -c1-160; }
+# No silent fallback (Tami 13:42, AC5CC9EB: "NOT a fallback ... I can't understand what is actually running"): one
+# LINUXDESK_ERROR line (the app pops it up) and exit 1. LINUXDESK_ALLOW_FALLBACK=1 (default OFF) = the old never-black
+# fallback, Chrome alone on lorie X11 (this rootfs has no sway).
 fallback() {  # fallback <why> "$@"
   why=$1; shift
+  if [ "${LINUXDESK_ALLOW_FALLBACK:-0}" != 1 ]; then
+    say "$why; no other desktop is started (LINUXDESK_ALLOW_FALLBACK=1 = Chrome alone on X11)"
+    stop_ours
+    echo "LINUXDESK_ERROR Omarchy Mobile did not start: $why"
+    exit 1
+  fi
   say "$why; Chrome alone on X11 instead (Stop and Start again to retry the phone shell)"
+  echo "LINUXDESK_DESKTOP Chrome"; stage Chrome
   stop_ours
   [ -n "$BIN" ] || { say "no browser installed either"; exit 127; }
   ( j=0; while [ $j -lt 240 ]; do
@@ -96,6 +109,78 @@ grep -qs 'hypr/phone\.lua' "$UH"/.config/hypr/*.lua || say "note: phone.lua is n
 [ -f "$LD/clean/install-shims.sh" ] && { sh "$LD/clean/install-shims.sh" || say "note: the PRoot shims could not be refreshed"; }
 OMARCHY_PATH=$(cat /etc/linuxdesk/omamobile-omarchy-path 2>/dev/null || echo /usr/share/omarchy)
 [ -f "$OMARCHY_PATH/shell/shell.qml" ] || OMARCHY_PATH=/usr/share/omarchy
+
+# ---- 2b. the phone lock screen, no fingerprint, no PIN (Tami 13:32) -----------------------------------------------------
+# Tami 13:32: greet with the phone's LOCK SCREEN (clock, notifications, "swipe up", as omamobile.org's) and let her in
+# without a fingerprint. It is Omarchy's lock plugin (omarchy.lock, IPC `omarchy-shell lock lock`) with Omarchy Mobile's
+# touch patches: the glance view (0023: time, date, newest notifications, "Swipe up to unlock") and the number pad
+# (0003; both need the lock-keypad toggle). It authenticates through PAM service omarchy-lock-password; their lock-pam
+# writes Omarchy's pam_unix stanza there. Here that ONE service is pam_permit (this PRoot rootfs only; Android's own lock
+# protects the phone): swipe up, tap any digit, then Enter. omarchy-lock-fingerprint stays absent (no fprintd, the
+# fingerprint plugin stays off). Done every Start (idempotent), so the prebuilt omamobile-rootfs-v1 gets it too.
+# LINUXDESK_OMAMOBILE_LOCK=0: no lock at Start, and Omarchy's password stanza comes back.
+LOCK=${LINUXDESK_OMAMOBILE_LOCK:-1}
+LPAM=/etc/pam.d/omarchy-lock-password
+LTAG="LinuxDesk omamobile lock"
+LBRI=/usr/local/bin/omarchy-brightness-display
+if [ "$LOCK" = 1 ]; then
+  [ -f "$LPAM" ] && ! grep -qs "$LTAG" "$LPAM" && cp -f "$LPAM" /etc/pam.d/omarchy-lock-password.linuxdesk-orig
+  mkdir -p /etc/pam.d
+  printf '#%%PAM-1.0\n# %s (start-omamobile.sh, Tami 13:32): no PIN, no fingerprint; LINUXDESK_OMAMOBILE_LOCK=0 restores\nauth     sufficient pam_permit.so\naccount  sufficient pam_permit.so\n' \
+    "$LTAG" > /etc/pam.d/.omarchy-lock-password.new
+  if cmp -s /etc/pam.d/.omarchy-lock-password.new "$LPAM"; then rm -f /etc/pam.d/.omarchy-lock-password.new
+  else chmod 644 /etc/pam.d/.omarchy-lock-password.new && mv -f /etc/pam.d/.omarchy-lock-password.new "$LPAM"; fi
+  # Without their patches the lock is Omarchy's desktop one (a password field, no on-screen keyboard over a session
+  # lock): put the series in place again (idempotent; it refuses cleanly and keeps Omarchy's files).
+  if [ ! -f /usr/share/omarchy/shell/plugins/lock/LockGlance.qml ] && command -v omamobile-omarchy-patches >/dev/null 2>&1; then
+    omamobile-omarchy-patches apply >/dev/null 2>&1 && say "lock screen: Omarchy Mobile's patches applied" \
+      || say "note: omamobile-omarchy-patches apply failed: the lock is Omarchy's desktop lock (no swipe-up glance)"
+  fi
+  # The glance and the number pad show only with the lock-keypad toggle (omamobile-setup-user sets it once).
+  mkdir -p "$UH/.local/state/omarchy/toggles" && touch "$UH/.local/state/omarchy/toggles/lock-keypad" \
+    && chown -R 1000:1000 "$UH/.local/state/omarchy" 2>/dev/null
+  # The lock blanks the display after 10 s (`omarchy-brightness-display off` = Hyprland DPMS off): inside the app that
+  # is a black Weston window, and Android turns the screen off itself. `off` is a no-op here, the rest is Omarchy's.
+  printf '#!/bin/sh\n# %s (start-omamobile.sh): the lock'"'"'s display-off is a no-op in the app; all else is Omarchy'"'"'s.\nfor a in "$@"; do [ "$a" = off ] && exit 0; done\nexec /usr/bin/omarchy-brightness-display "$@"\n' \
+    "$LTAG" > /usr/local/bin/.omarchy-brightness-display.new && chmod 755 /usr/local/bin/.omarchy-brightness-display.new \
+    && mv -f /usr/local/bin/.omarchy-brightness-display.new "$LBRI"
+  # A swipe up only moves the glance to the number pad (0023's reveal()). Swipe-to-unlock: a private OMARCHY_PATH (a
+  # symlink farm + a copy of shell/, as qt612-shell.sh builds; the package's files and the patch series' sha256s stay
+  # untouched) whose reveal() also submits, which pam_permit lets through. Rebuilt when the source LockGlance.qml changes.
+  SW=/var/lib/linuxdesk/omamobile-swipe
+  SG=$OMARCHY_PATH/shell/plugins/lock/LockGlance.qml
+  if [ -f "$SG" ] && ! cmp -s "$SG" "$SW/.src-LockGlance.qml"; then
+    rm -rf /var/lib/linuxdesk/omamobile-swipe.new; mkdir -p /var/lib/linuxdesk/omamobile-swipe.new
+    for e in "$OMARCHY_PATH"/*; do [ "${e##*/}" = shell ] || ln -s "$e" "/var/lib/linuxdesk/omamobile-swipe.new/${e##*/}"; done
+    cp -R "$OMARCHY_PATH/shell" /var/lib/linuxdesk/omamobile-swipe.new/shell && cp -f "$SG" /var/lib/linuxdesk/omamobile-swipe.new/.src-LockGlance.qml \
+      && awk '/^  function reveal\(\) \{/ { r = 1 } r && /^    pendingFocus = true$/ { print; print "    lock.submitPassword(\"linuxdesk-swipe\")  // LinuxDesk (Tami 13:32): swipe up unlocks (pam_permit)"; r = 0; next } { print }' \
+        "$SG" > /var/lib/linuxdesk/omamobile-swipe.new/shell/plugins/lock/LockGlance.qml
+    if grep -q 'linuxdesk-swipe' /var/lib/linuxdesk/omamobile-swipe.new/shell/plugins/lock/LockGlance.qml; then
+      rm -rf /var/lib/linuxdesk/omamobile-swipe; mv /var/lib/linuxdesk/omamobile-swipe.new /var/lib/linuxdesk/omamobile-swipe
+      say "lock screen: swipe-to-unlock shell built at $SW"
+    else
+      rm -rf /var/lib/linuxdesk/omamobile-swipe.new
+      say "note: LockGlance.qml has no reveal() to hook (Omarchy Mobile changed?): swipe up, any digit, Enter instead"
+    fi
+  fi
+  if [ -f "$SG" ] && [ -f "$SW/shell/shell.qml" ] && grep -qs 'linuxdesk-swipe' "$SW/shell/plugins/lock/LockGlance.qml"; then
+    OMARCHY_PATH=$SW
+    say "lock screen: on, swipe up unlocks (no PIN, no fingerprint; LINUXDESK_OMAMOBILE_LOCK=0 turns it off)"
+  else
+    say "lock screen: on (omarchy-lock-password = pam_permit: swipe up, any digit, Enter; LINUXDESK_OMAMOBILE_LOCK=0 turns it off)"
+  fi
+else
+  if grep -qs "$LTAG" "$LPAM"; then
+    if [ -f /etc/pam.d/omarchy-lock-password.linuxdesk-orig ]; then
+      mv -f /etc/pam.d/omarchy-lock-password.linuxdesk-orig "$LPAM"
+    else
+      rm -f /etc/pam.d/omarchy-lock-password
+      [ -x /usr/lib/omamobile-omarchy/lock-pam ] && /usr/lib/omamobile-omarchy/lock-pam >/dev/null 2>&1
+    fi
+  fi
+  grep -qs "$LTAG" "$LBRI" && rm -f /usr/local/bin/omarchy-brightness-display
+  say "lock screen: off (LINUXDESK_OMAMOBILE_LOCK=0; Omarchy's password PAM stanza restored)"
+fi
 
 # ---- 3. Chrome in the drawer gets LinuxDesk's flags --------------------------------------------------------------------
 # google-chrome-stable / chromium read ~/.config/{chrome,chromium}-flags.conf. Keep the user's (and omamobile-setup-user's
@@ -159,6 +244,7 @@ case "$S" in ''|*[!0-9]*) S=2 ;; esac
 W=$((W / S * S)); H=$((H / S * S))
 ICD=$(ls /usr/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1)
 WR=${LINUXDESK_WESTON_RENDERER:-gl}
+stage Weston
 # shellcheck disable=SC2086  # AS is a command prefix, intended to split
 setsid $AS env XDG_RUNTIME_DIR="$RT" DISPLAY="$DISPLAY" MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink \
   VK_ICD_FILENAMES="$ICD" weston -B x11 --renderer="$WR" --shell=kiosk --socket=wayland-omarchy \
@@ -170,8 +256,8 @@ while [ ! -S "$RT/wayland-omarchy" ] && [ $i -lt $((WWAIT * 2)) ]; do
   sleep 0.5; i=$((i + 1))
 done
 if [ ! -S "$RT/wayland-omarchy" ]; then
-  tail -n 10 /tmp/omamobile-weston.log 2>/dev/null | sed 's/^/[omamobile]   /'
-  fallback "weston did not come up" "$@"
+  tail -n 12 /tmp/omamobile-weston.log 2>/dev/null | sed 's/^/[omamobile]   /'
+  fallback "Weston did not come up: $(last_line /tmp/omamobile-weston.log)" "$@"
 fi
 say "weston up (pid $WPID, ${W}x${H} portrait, scale $S -> $((W / S))x$((H / S)) logical)"
 
@@ -221,6 +307,7 @@ hyprctl() {
   sig=$(ls -t "$RT/hypr" 2>/dev/null | head -n 1)
   XDG_RUNTIME_DIR=$RT HYPRLAND_INSTANCE_SIGNATURE=$sig LD_LIBRARY_PATH=$LDP "$HB/hyprctl" "$@"
 }
+stage Hyprland
 start_hyprland
 i=0; up=0
 while [ $i -lt $((HWAIT * 2)) ]; do
@@ -230,8 +317,10 @@ while [ $i -lt $((HWAIT * 2)) ]; do
 done
 if [ $up -ne 1 ]; then
   tail -n 12 /tmp/omamobile-hyprland.log 2>/dev/null | sed 's/^/[omamobile]   /'
-  fallback "Hyprland did not come up" "$@"
+  fallback "Hyprland did not come up: $(last_line /tmp/omamobile-hyprland.log)" "$@"
 fi
+echo "LINUXDESK_DESKTOP Omarchy Mobile"
+stage "phone shell"
 # No start-hyprland watchdog / guiutils warning bars (also in linuxdesk-omamobile.lua; this covers a config error).
 hyprctl eval 'hl.config({ misc = { disable_hyprland_guiutils_check = true, disable_watchdog_warning = true } })' >/dev/null 2>&1
 say "Hyprland up (pid $HPID); Omarchy's autostart starts the shell, phone.lua's rules are loaded"
@@ -251,11 +340,24 @@ command -v omamobile-osk-guard >/dev/null 2>&1 \
 # ---- 8. on screen = the shell's home screen (no Chrome window to wait for) ----------------------------------------------
 # LINUXDESK_WINDOW_UP tells the app (RUNNING) and the setup screen that the desktop is visible: the phone bar or the
 # home screen layer. After 90 s without either, say so anyway (Hyprland itself is up) so the app never waits forever.
+# Tami 13:32: the session opens LOCKED, on the phone lock screen (section 2b). Asked through the compositor (Hyprland's
+# env: qs finds the shell by its Wayland display); the lock plugin may load after the bar, so ask until it answers ok
+# (up to 20 s). Then LINUXDESK_WINDOW_UP as before; the answer is in /tmp/omamobile-lock.log.
+LOCKLOG=/tmp/omamobile-lock.log
+rm -f "$LOCKLOG"
+lock_now() {
+  [ "$LOCK" = 1 ] || return 0
+  hx 'i=0; while [ $i -lt 20 ]; do r=$(omarchy-shell lock lock 2>&1); [ "$r" = ok ] && break; sleep 1; i=$((i + 1)); done; echo "$r" > /tmp/omamobile-lock.log'
+  k=0
+  while [ ! -s "$LOCKLOG" ] && [ $k -lt 44 ]; do sleep 0.5; k=$((k + 1)); done
+  if [ "$(cat "$LOCKLOG" 2>/dev/null)" = ok ]; then echo "[omamobile] the lock screen is up (swipe up to unlock)"
+  else echo "[omamobile] note: the lock screen did not come up ($(cat "$LOCKLOG" 2>/dev/null || echo 'no answer')); home screen instead"; fi
+}
 (
   j=0
   while [ $j -lt 180 ]; do
     if hyprctl -j layers 2>/dev/null | grep -Eq '"namespace": *"(omarchy-bar|omamobile-home)"'; then
-      echo "[omamobile] the phone shell is on screen"; echo "LINUXDESK_WINDOW_UP ${W}x${H}"; exit 0
+      echo "[omamobile] the phone shell is on screen"; lock_now; echo "LINUXDESK_WINDOW_UP ${W}x${H}"; exit 0
     fi
     sleep 0.5; j=$((j + 1))
   done
@@ -271,6 +373,7 @@ CODE=0
 if [ "${LINUXDESK_OPEN_BROWSER:-0}" = 1 ] && [ -n "$BIN" ]; then
   WL=$(ls "$RT" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -n 1)
   say "LINUXDESK_OPEN_BROWSER=1: starting $BIN as well"
+  stage Chrome
   # Flags from ~/.config/chrome-flags.conf (written above); as desk, like a drawer launch.
   # shellcheck disable=SC2086
   XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=${WL:-wayland-1} $AS env HOME="$UH" "$BIN"
@@ -286,11 +389,14 @@ if { [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] || [ "${LINUXDESK_OPEN_BROWSER:-0}" != 
   while kill -0 "$HPID" 2>/dev/null; do
     if [ -e "$TRIGGER" ]; then
       rm -f "$TRIGGER"
-      [ -n "$BIN" ] && hx "$BIN > /tmp/omamobile-chrome.log 2>&1" && say "opened $BIN on request ($TRIGGER)"
+      [ -n "$BIN" ] || echo "LINUXDESK_ERROR Chrome is not installed in this rootfs"
+      [ -n "$BIN" ] && stage Chrome && hx "$BIN > /tmp/omamobile-chrome.log 2>&1" && say "opened $BIN on request ($TRIGGER)"
     fi
     sleep 2
   done
   say "Hyprland exited"
+  # Not the app's Stop (that kills this script first): the phone shell ended by itself, so the app says so (a pop-up).
+  echo "LINUXDESK_ERROR Hyprland exited: $(last_line /tmp/omamobile-hyprland.log)"
   CODE=0
 fi
 stop_ours

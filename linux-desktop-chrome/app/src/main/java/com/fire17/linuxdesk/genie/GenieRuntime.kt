@@ -273,8 +273,16 @@ object GenieRuntime {
 
     private fun supervise(proc: Process, withBrowser: Boolean) {
         try {
+            val st = com.fire17.linuxdesk.SessionStatus()
             proc.inputStream.bufferedReader().forEachLine { line ->
                 SessionBus.log(line)
+                // The start script deskd runs reports its components and errors the same way (SessionStatus).
+                when (val e = st.onLine(line)) {
+                    is com.fire17.linuxdesk.SessionStatus.Event.Stage -> if (withBrowser && !SessionBus.browserWindowUp)
+                        SessionBus.setState(SessionBus.State.STARTING_BROWSER, "Starting ${e.component} …")
+                    is com.fire17.linuxdesk.SessionStatus.Event.Error -> if (running) com.fire17.linuxdesk.SessionErrors.report(e.reason)
+                    else -> {}
+                }
                 // GPU v2: Chromium's GPU process crashed → software flags for this session, restart the browser once.
                 if (withBrowser && com.fire17.linuxdesk.gpu.GpuSession.onBrowserLine(line) &&
                     com.fire17.linuxdesk.gpu.GpuSession.restartWanted()) {
@@ -283,7 +291,7 @@ object GenieRuntime {
                 }
                 if (withBrowser && line.startsWith("LINUXDESK_WINDOW_UP") && !SessionBus.browserWindowUp) {
                     SessionBus.browserWindowUp = true
-                    SessionBus.setState(SessionBus.State.RUNNING, "Running")
+                    SessionBus.setState(SessionBus.State.RUNNING, st.runningName()?.let { "$it running" } ?: "Running")
                 }
             }
         } catch (_: Exception) {

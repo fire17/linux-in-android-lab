@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Chrome (Android)
+Comment=This phone's Android Chrome in a window
+Exec=omarchy-android chrome
+Icon=phone
+Terminal=false
+Categories=Utility;X-Android;
