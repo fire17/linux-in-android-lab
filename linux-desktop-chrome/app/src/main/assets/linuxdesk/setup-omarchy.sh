@@ -239,7 +239,7 @@ SWAY_PKGS="sway waybar foot mako xorg-xwayland swaybg wofi"
 # The end4 look (sway-theme.py, /etc/linuxdesk/sway-style): matugen (palette from the wallpaper), nwg-dock (Mac dock),
 # swaync (notifications), inter-font. All in ALARM (notes/gallery/_alarm/names.txt, 2026-11-20). Optional: installed
 # after the core set, never part of the missing-check below; the theme falls back (baked palette, waybar dock, mako).
-SWAY_EXTRA_PKGS="matugen nwg-dock swaync inter-font"
+SWAY_EXTRA_PKGS="matugen nwg-dock swaync inter-font hyprland-guiutils"   # guiutils: Hyprland's dialogs (Tami 06:15)
 sway_main() {
   # hyprland too: start-hyprland.sh falls back to start-sway.sh, which needs sway installed (else it lands on i3).
   case "$(cat "$MARK/desktop" 2>/dev/null || true)" in sway|hyprland) ;; *) return 0 ;; esac

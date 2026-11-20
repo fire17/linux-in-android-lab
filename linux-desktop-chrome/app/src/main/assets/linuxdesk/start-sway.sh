@@ -183,6 +183,14 @@ if [ $CODE -ne 0 ] && [ $(( $(date +%s) - T0 )) -lt 10 ] && kill -0 "$WATCH" 2>/
 fi
 kill "$WATCH" "$FIT" 2>/dev/null
 echo "[sway] $BIN exited with code $CODE"
+# Tami 06:49: closing Chrome must not take the desktop down. sway stays up until it exits itself (logout) or the app's
+# Stop; the dock reopens Chrome. LINUXDESK_SWAY_HOLD=0 keeps the old Chrome-is-the-session behaviour.
+if [ "${LINUXDESK_SWAY_HOLD:-1}" = 1 ] && kill -0 "$SWAY" 2>/dev/null; then
+  echo "[sway] the desktop stays up without $BIN (sway pid $SWAY); reopen it from the dock"
+  while kill -0 "$SWAY" 2>/dev/null; do sleep 2; done
+  echo "[sway] sway exited"
+  CODE=0
+fi
 swaymsg exit >/dev/null 2>&1
 [ -n "$DBUS" ] && kill "$DBUS" 2>/dev/null
 exit $CODE

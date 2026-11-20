@@ -214,6 +214,18 @@ if [ $up -ne 1 ]; then
   tail -n 12 /tmp/hyprland.log 2>/dev/null | sed 's/^/[hyprland]   /'
   fallback "Hyprland did not come up" "$@"
 fi
+# Hide the two warning bars Tami saw (06:13): we start Hyprland ourselves on purpose (no systemd, so no
+# start-hyprland watchdog), and hyprland-guiutils may still be installing. The Lua config refuses `keyword`; `eval` works
+# (verified live 06:18: both options read true and the bars were gone).
+hyprctl eval 'hl.config({ misc = { disable_hyprland_guiutils_check = true, disable_watchdog_warning = true } })' >/dev/null 2>&1 \
+  || say "note: could not hide the start-hyprland/guiutils warnings"
+# The dock (Tami 06:19: "no dock"): nwg-dock in ALARM is the sway build ($SWAYSOCK fatal), so a second waybar with
+# launchers + wlr/taskbar. Through the compositor (`dispatch exec` fails under the Lua config) so it gets Hyprland's env;
+# verified live 06:44 (layer "hyprdock", 968x72 at the bottom). LINUXDESK_HYPR_DOCK=0 turns it off.
+if [ "${LINUXDESK_HYPR_DOCK:-1}" = 1 ] && command -v waybar >/dev/null 2>&1 && [ -f /opt/linuxdesk/omarchy/hypr-dock.sh ]; then
+  hyprctl eval 'hl.exec_cmd([[sh /opt/linuxdesk/omarchy/hypr-dock.sh > /tmp/hypr-dock.log 2>&1]])' >/dev/null 2>&1 \
+    && say "dock started (waybar, /tmp/hypr-dock.log)" || say "note: could not start the dock"
+fi
 WL=$(ls "$RT" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -n 1)
 WL=${WL:-wayland-1}
 say "Hyprland up (pid $HPID, $WL); the Omarchy shell starts from hyprland.lua"
@@ -274,5 +286,15 @@ NOWINDOW=0
 run_chrome "$@"
 [ "$NOWINDOW" = 1 ] && fallback "$BIN never showed a window on Hyprland (code $CODE)" "$@"
 say "$BIN exited with code $CODE"
+# Tami 06:49: "every time we closed Chrome it didn't hold the desktop by itself and tried to open the browser again".
+# Closing Chrome used to end this script, so the app tore the session down and restarted it (browser first). Hyprland
+# is the session now: it stays up until it exits itself (Super+Shift+E / logout) or the app's Stop kills us; the dock
+# and the app launcher reopen Chrome. LINUXDESK_HYPR_HOLD=0 keeps the old Chrome-is-the-session behaviour.
+if [ "${LINUXDESK_HYPR_HOLD:-1}" = 1 ] && kill -0 "$HPID" 2>/dev/null; then
+  say "the desktop stays up without $BIN (Hyprland pid $HPID); reopen it from the dock"
+  while kill -0 "$HPID" 2>/dev/null; do sleep 2; done
+  say "Hyprland exited"
+  CODE=0
+fi
 stop_ours
 exit $CODE
