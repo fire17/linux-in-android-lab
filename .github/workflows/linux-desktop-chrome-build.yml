@@ -7,6 +7,8 @@ name: build
 on:
   push:
     paths: ["linux-desktop-chrome/**", ".github/workflows/linux-desktop-chrome-build.yml"]
+    branches: [main]   # tag pushes (rootfs release tags) never build an APK
+  pull_request:
   workflow_dispatch:
 
 env:
