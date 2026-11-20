@@ -119,10 +119,13 @@ try_hyprland() {
 
   # Weston: the Wayland host on lorie. pixman (lorie has no DRI3, so gl/zink cannot import client buffers: A2 23:28).
   rm -f "$RT/wayland-omarchy" "$RT/wayland-omarchy.lock"
+  # WINDOWED, never --fullscreen: on lorie (no _NET_WM_STATE_FULLSCREEN) weston hangs before creating its socket, so
+  # this always timed out and fell back to sway (Tami 12:29: clean-weston.log ends at "Output ... color profile").
+  # start-hyprland.sh learned this at 02:49; windowed at W x H it still fills lorie's screen. Poll 30 s, not 10.
   as_user env XDG_RUNTIME_DIR=$RT DISPLAY=$DISPLAY weston -B x11 --renderer=pixman --shell=kiosk \
-    --socket=wayland-omarchy --fullscreen --width=$W --height=$Hh --scale=1 --idle-time=0 >/tmp/clean-weston.log 2>&1 &
+    --socket=wayland-omarchy --width=$W --height=$Hh --scale=1 --idle-time=0 >/tmp/clean-weston.log 2>&1 &
   WPID=$!; PIDS="$PIDS $WPID"
-  i=0; while [ ! -S "$RT/wayland-omarchy" ] && [ $i -lt 40 ]; do kill -0 $WPID 2>/dev/null || break; sleep 0.25; i=$((i + 1)); done
+  i=0; while [ ! -S "$RT/wayland-omarchy" ] && [ $i -lt 120 ]; do kill -0 $WPID 2>/dev/null || break; sleep 0.25; i=$((i + 1)); done
   [ -S "$RT/wayland-omarchy" ] || { say "clean: weston did not come up:"; tail -n 8 /tmp/clean-weston.log | sed 's/^/[omarchy]   /'; return 1; }
   say "clean: weston up (pid $WPID, ${W}x${Hh})"
 
