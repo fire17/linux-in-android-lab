@@ -36,10 +36,11 @@ class ArchRootfsDownloader(private val context: Context) {
         /** Marker version for RootfsInstaller (bump to force a re-install of rootfs-arch). */
         const val VERSION = "archlinuxarm-aarch64-v1"
         const val FILE = "ArchLinuxARM-aarch64-latest.tar.gz"
+        /** Raced at every install ([Http.rankBySpeed], 1 MiB probe, 3 s): the fastest goes first (Tami 07:16, Israel). */
         val MIRRORS = listOf(
+            "https://de3.mirror.archlinuxarm.org/os/",
             "https://fl.us.mirror.archlinuxarm.org/os/",
             "https://ca.us.mirror.archlinuxarm.org/os/",
-            "https://de3.mirror.archlinuxarm.org/os/",
         )
         /** The build the lane downloaded and GPG-verified on 2026-11-19 (Last-Modified 2026-08-05, 829,367,415 B). */
         const val KNOWN_SHA256 = "42a4eeaa038994ffd31fa173256ef2f0ef511358eeb41b9ea1f8626391b9b319"
@@ -56,7 +57,7 @@ class ArchRootfsDownloader(private val context: Context) {
         val done = File(dir, FILE)
         val part = File(dir, "$FILE.part")
         var lastError: Exception? = null
-        for (base in MIRRORS) {
+        for (base in Http.rankBySpeed(MIRRORS, FILE)) {
             try {
                 val md5 = fetchText(base + FILE + ".md5").trim().split(Regex("\\s+")).first().lowercase()
                 if (!md5.matches(Regex("[0-9a-f]{32}"))) throw IOException("bad .md5 from $base: '$md5'")
@@ -97,19 +98,25 @@ class ArchRootfsDownloader(private val context: Context) {
         // A tarball left by the file mode is useless here; free its 0.8 GB first.
         File(dir, FILE).delete(); File(dir, "$FILE.part").delete()
         var lastError: Exception? = null
-        for (base in MIRRORS) {
+        val ranked = Http.rankBySpeed(MIRRORS, FILE)
+        onProgress("fastest mirror: ${URL(ranked.first()).host}")
+        for (base in ranked) {
             try {
                 val md5 = fetchText(base + FILE + ".md5").trim().split(Regex("\\s+")).first().lowercase()
                 if (!md5.matches(Regex("[0-9a-f]{32}"))) throw IOException("bad .md5 from $base: '$md5'")
                 if (md5 != KNOWN_MD5) onProgress("note: the mirror has a newer Arch Linux ARM build than the one verified on 2026-11-19 (md5 $md5)")
                 staging.mkdirs()
-                val c = open(base + FILE, 0)
+                // 8 parallel HTTP Range connections (ParallelRangeStream) when the size is known; else one connection.
+                val len = Http.headLength(base + FILE)
+                val c = if (len == null) open(base + FILE, 0) else null
                 try {
-                    if (c.responseCode != 200) throw IOException("HTTP ${c.responseCode} for ${base + FILE}")
-                    val total = c.contentLengthLong.takeIf { it > 0 } ?: if (md5 == KNOWN_MD5) KNOWN_SIZE else -1L
-                    onProgress("Downloading + unpacking Arch Linux ARM in one pass (${mb(total)} MB) from ${URL(base).host}")
+                    if (c != null && c.responseCode != 200) throw IOException("HTTP ${c.responseCode} for ${base + FILE}")
+                    val total = len ?: c!!.contentLengthLong.takeIf { it > 0 } ?: if (md5 == KNOWN_MD5) KNOWN_SIZE else -1L
+                    onProgress("Downloading + unpacking Arch Linux ARM in one pass (${mb(total)} MB) from ${URL(base).host}" +
+                        if (c == null) ", 8 parallel connections" else "")
                     var lastPct = -1
-                    val (stats, d) = StreamInstall.run(c.inputStream, total, staging,
+                    val raw = if (c == null) ParallelRangeStream(base + FILE, total) else c.inputStream
+                    val (stats, d) = raw.use { StreamInstall.run(it, total, staging,
                         extract = { TarGzExtractor(staging, SKIP_PREFIXES).extract(it, onProgress) },
                         verify = { d ->
                             when {
@@ -127,11 +134,11 @@ class ArchRootfsDownloader(private val context: Context) {
                                     if (pct % 5 == 0) onProgress("download $pct% (${mb(got)} / ${mb(tot)} MB)")
                                 }
                             }
-                        })
+                        }) }
                     onProgress(if (d.sha256 == KNOWN_SHA256) "md5 OK, pinned sha256 OK (the 2026-11-19 GPG-verified build)"
                         else "md5 OK; sha256 ${d.sha256} (a newer build than the pinned one; GPG not checked on the phone)")
                     return stats
-                } finally { c.disconnect() }
+                } finally { c?.disconnect() }
             } catch (e: Exception) {
                 Log.w(TAG, "mirror $base failed (stream)", e)
                 onProgress("mirror ${URL(base).host} failed: ${e.javaClass.simpleName}: ${e.message}")

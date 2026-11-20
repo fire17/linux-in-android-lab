@@ -65,10 +65,17 @@ class RootfsInstaller(private val context: Context, val distro: Distro = Distro.
             // the packages marker), and only when that asset is missing takes this ALARM path + setup-omamobile.sh.
             Distro.OMARCHY, Distro.OMARCHY_CLEAN, Distro.OMARCHY_MOBILE -> {
                 if (!Distro.omarchySupported()) error("Omarchy (Arch Linux ARM) needs an arm64-v8a device")
+                // OMARCHY / OMARCHY_CLEAN: the omarchy-rootfs workflow's release (setup already run, marker inside), only
+                // with the fast install ON (default); OFF keeps the resumable file mode below.
+                val prebuiltUrl = if (stream && distro != Distro.OMARCHY_MOBILE)
+                    PrebuiltRootfs.asset("${distro.id}-rootfs-v1", "${distro.id}-rootfs.tar.zst") else null
                 if (distro == Distro.OMARCHY_MOBILE && PrebuiltRootfs.tryInstall(OmamobileRootfs.ASSET_URL,
                         OmamobileRootfs.SHA256_URL, tmp, onProgress, onPercent)) {
                     onPercent(-1)
                     "prebuilt ${OmamobileRootfs.ASSET} (${OmamobileRootfs.RELEASE_TAG})"
+                } else if (prebuiltUrl != null && PrebuiltRootfs.tryInstall(prebuiltUrl, "$prebuiltUrl.sha256", tmp, onProgress, onPercent)) {
+                    onPercent(-1)
+                    "prebuilt $prebuiltUrl"
                 } else if (stream) {
                     // A2: one pass, nothing stored; the hash is checked at the end of the stream, before the swap below.
                     ArchRootfsDownloader(context).streamInto(tmp, onProgress, onPercent).also { onPercent(-1) }
