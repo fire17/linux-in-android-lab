@@ -206,6 +206,16 @@ if [ "${LINUXDESK_HYPR_SHIMS:-1}" = 1 ]; then
   shim "$LD/clean/loginctl-shim.sh" loginctl
   shim "$LD/clean/systemd-cat-shim.sh" systemd-cat
   say "session shims: $(ls "$HSHIM" 2>/dev/null | tr '\n' ' ')"
+  # Folders open in Thunar: Omarchy's mimeapps.list names Nautilus, which is not installed (xdg-open of a folder,
+  # "Open folder" in apps and the shell). Only that one default changes, and only while Nautilus is missing.
+  MA=$NH/.config/mimeapps.list
+  if ! command -v nautilus >/dev/null 2>&1 && [ -f /usr/share/applications/thunar.desktop ] \
+     && grep -q 'org\.gnome\.Nautilus\.desktop' "$MA" 2>/dev/null; then
+    # Rewritten in place (cat >), so the file keeps desk's ownership.
+    sed 's/^\(inode\/directory=\)org\.gnome\.Nautilus\.desktop/\1thunar.desktop/' "$MA" > "$MA.ld" 2>/dev/null \
+      && cat "$MA.ld" > "$MA" && say "folders open in Thunar (mimeapps.list)"
+    rm -f "$MA.ld"
+  fi
 else
   rm -rf "$HSHIM"; HSHIM=/nonexistent
 fi

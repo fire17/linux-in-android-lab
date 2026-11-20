@@ -163,9 +163,9 @@ if ! stage_done; then
     { print }
   ' "$CONF" > "$CONF.new" && mv "$CONF.new" "$CONF"
   cat > /etc/pacman.d/mirrorlist <<'EOF'
+Server = https://de3.mirror.archlinuxarm.org/$arch/$repo
 Server = https://fl.us.mirror.archlinuxarm.org/$arch/$repo
 Server = https://ca.us.mirror.archlinuxarm.org/$arch/$repo
-Server = https://de3.mirror.archlinuxarm.org/$arch/$repo
 Server = http://mirror.archlinuxarm.org/$arch/$repo
 EOF
   mark_done

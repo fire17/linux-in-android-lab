@@ -1,0 +1,127 @@
+# Omarchy Mobile prebuilt rootfs (the LinuxDesk fast path, OmamobileRootfs.kt / PrebuiltRootfs.kt): Arch Linux ARM +
+# setup-omamobile.sh run ONCE here, natively on an arm64 runner in a real chroot, then packed as
+# omamobile-rootfs-aarch64.tar.zst (zstd -19 --long=27) + .sha256 and uploaded to the GitHub Release `omamobile-rootfs-v1`.
+# The app then installs it with 8 parallel HTTP Range requests and never runs pacman on the phone.
+#
+# Manual only (publishing is an outward action): Actions tab -> "omamobile-rootfs" -> Run workflow, or
+#   gh workflow run linux-desktop-chrome-omamobile-rootfs.yml --repo fire17/linux-in-android-lab
+# (push-repo.sh copies this file to the repo root as linux-desktop-chrome-omamobile-rootfs.yml and sets APP_DIR).
+name: omamobile-rootfs
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)publish (the app reads omamobile-rootfs-v1)"
+        default: "omamobile-rootfs-v1"
+        required: true
+      upload:
+        description: "Upload to the Release (false = build + artifact check only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  APP_DIR: linux-desktop-chrome
+  ASSET: omamobile-rootfs-aarch64.tar.zst
+  # Arch Linux ARM base (same source and pins as ArchRootfsDownloader.kt).
+  ALARM_URL: https://fl.us.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+  ALARM_PINNED_SHA256: 42a4eeaa038994ffd31fa173256ef2f0ef511358eeb41b9ea1f8626391b9b319
+
+jobs:
+  rootfs:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    defaults:
+      run:
+        working-directory: ${{ env.APP_DIR }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Host tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libarchive-tools zstd curl
+          df -h / /mnt 2>/dev/null || df -h /
+
+      - name: Arch Linux ARM base (md5 from the mirror; pinned sha256 noted)
+        run: |
+          set -eu
+          W=$RUNNER_TEMP/alarm; mkdir -p "$W"
+          curl -fsSL --retry 3 -o "$W/alarm.tar.gz" "$ALARM_URL"
+          want=$(curl -fsSL --retry 3 "$ALARM_URL.md5" | awk '{print $1}')
+          got=$(md5sum "$W/alarm.tar.gz" | awk '{print $1}')
+          [ "$want" = "$got" ] || { echo "md5 mismatch: $got vs mirror $want"; exit 1; }
+          sha=$(sha256sum "$W/alarm.tar.gz" | awk '{print $1}')
+          if [ "$sha" = "$ALARM_PINNED_SHA256" ]; then echo "pinned sha256 OK"; else echo "note: newer ALARM build ($sha), md5 OK"; fi
+          R=$RUNNER_TEMP/root; sudo mkdir -p "$R"
+          # The kernel, firmware and modules are never used under PRoot (ArchRootfsDownloader.SKIP_PREFIXES).
+          sudo bsdtar -xpf "$W/alarm.tar.gz" -C "$R" --exclude './boot/*' --exclude './usr/lib/firmware/*' --exclude './usr/lib/modules/*'
+          rm -f "$W/alarm.tar.gz"
+          echo "ROOT=$R" >> "$GITHUB_ENV"
+
+      - name: LinuxDesk scripts into the guest (/opt/linuxdesk, as the app copies them)
+        run: |
+          set -eu
+          sudo rm -rf "$ROOT/opt/linuxdesk"; sudo mkdir -p "$ROOT/opt"
+          sudo cp -r app/src/main/assets/linuxdesk "$ROOT/opt/linuxdesk"
+          sudo chmod -R a+rX "$ROOT/opt/linuxdesk"
+          sudo rm -f "$ROOT/etc/resolv.conf"
+          if [ -s /run/systemd/resolve/resolv.conf ]; then sudo cp /run/systemd/resolve/resolv.conf "$ROOT/etc/resolv.conf";
+          else printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee "$ROOT/etc/resolv.conf" >/dev/null; fi
+
+      - name: setup-omamobile.sh in a chroot (native arm64)
+        run: |
+          set -eu
+          sudo mount -t proc proc "$ROOT/proc"
+          sudo mount -t sysfs sys "$ROOT/sys"
+          sudo mount --bind /dev "$ROOT/dev"
+          sudo mount --bind /dev/pts "$ROOT/dev/pts"
+          sudo chroot "$ROOT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME=/root LANG=C.UTF-8 TERM=dumb \
+            /bin/sh /opt/linuxdesk/setup-omamobile.sh 2>&1 | tee "$RUNNER_TEMP/setup.log"
+          test -f "$ROOT/etc/linuxdesk/omamobile-v1" || { echo "setup did not write the marker"; exit 1; }
+          cat "$ROOT/etc/linuxdesk/omamobile-v1"
+          sudo chroot "$ROOT" pacman -Q > "$RUNNER_TEMP/omamobile-rootfs-aarch64.packages.txt"
+          wc -l "$RUNNER_TEMP/omamobile-rootfs-aarch64.packages.txt"
+
+      - name: Unmount + trim
+        if: always()
+        run: |
+          for m in dev/pts dev sys proc; do sudo umount -l "$ROOT/$m" 2>/dev/null || true; done
+          sudo rm -rf "$ROOT"/var/cache/pacman/pkg/* "$ROOT"/var/cache/linuxdesk "$ROOT"/root/.cache "$ROOT"/tmp/* \
+            "$ROOT"/var/log/pacman.log "$ROOT"/etc/pacman.d/gnupg/S.* 2>/dev/null || true
+          sudo du -sh "$ROOT" 2>/dev/null || true
+
+      - name: Pack (tar, GNU format, numeric owners) | zstd -19 --long=27
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          # --long=27 (128 MiB window): the app's zstd-jni decoder sets setLongMax(31), so any window up to 2 GiB works.
+          sudo tar --format=gnu --numeric-owner -C "$ROOT" -cf - . | zstd -19 --long=27 -T0 -q -o "$ASSET"
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          cat "$ASSET.sha256"; ls -l "$ASSET"
+          size=$(stat -c %s "$ASSET")
+          [ "$size" -lt 2147483648 ] || { echo "asset is $size bytes, over GitHub's 2 GiB per-asset limit"; exit 1; }
+          zstd -t --long=27 "$ASSET"
+
+      - name: Publish to the Release
+        if: ${{ inputs.upload }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+              --title "Omarchy Mobile rootfs (LinuxDesk, prebuilt)" \
+              --notes "Arch Linux ARM + Omarchy + Omarchy Mobile's phone shell (community port, github.com/derekross/omarchy-mobile, MIT) for LinuxDesk's PRoot. Built by .github/workflows/omamobile-rootfs.yml from setup-omamobile.sh. The app downloads this asset itself."
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            "$ASSET" "$ASSET.sha256" omamobile-rootfs-aarch64.packages.txt
+          echo "published https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$ASSET"
+
+      - name: Setup log (on failure)
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/setup.log" 2>/dev/null || true

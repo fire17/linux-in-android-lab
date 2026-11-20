@@ -314,6 +314,8 @@ look_main() {
 # call, never fatal, gives up (writes the marker) after APPS_TRIES passes.
 HYPR_TOOLS_REV=1
 HYPR_TOOLS_PKGS="jq gum wl-clipboard grim slurp fd ripgrep fzf eza zoxide starship bat hyprpicker hyprsunset satty"
+# Last (bigger): Omarchy's icon theme (yaru, 43 MiB; the guest has only Adwaita/hicolor) and tte (the screensaver).
+HYPR_TOOLS_PKGS="$HYPR_TOOLS_PKGS python-terminaltexteffects yaru-icon-theme"
 hypr_tools_main() {
   [ "$(cat "$MARK/hypr-tools-v1" 2>/dev/null || true)" = "$HYPR_TOOLS_REV" ] && { log "hypr-tools: already done"; return 0; }
   mkdir -p "$MARK"
@@ -374,9 +376,9 @@ awk '
 ' "$CONF" > "$CONF.new" && mv "$CONF.new" "$CONF"
 # Mirror: the geo-redirector host, plus HTTPS mirrors that verified on 2026-11-19.
 cat > /etc/pacman.d/mirrorlist <<'EOF'
+Server = https://de3.mirror.archlinuxarm.org/$arch/$repo
 Server = https://fl.us.mirror.archlinuxarm.org/$arch/$repo
 Server = https://ca.us.mirror.archlinuxarm.org/$arch/$repo
-Server = https://de3.mirror.archlinuxarm.org/$arch/$repo
 Server = http://mirror.archlinuxarm.org/$arch/$repo
 EOF
 mark_done

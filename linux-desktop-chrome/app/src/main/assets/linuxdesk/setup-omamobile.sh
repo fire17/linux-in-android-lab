@@ -183,10 +183,14 @@ if ! stage_done; then
     pacman-key --list-keys "$fpr" >/dev/null 2>&1 || { log "Omarchy Mobile signing key $fpr not in the keyring"; exit 6; }
   done
   gpgconf --kill gpg-agent 2>/dev/null || true
-  # Order: ALARM first (its hyprland/aquamarine/hyprgraphics sonames resolve; setup-omarchy-clean.sh stage 4), then
-  # [omarchy] (omarchy, walker, google-chrome), then [omamobile] LAST, so only packages nobody else has come from it.
+  # Order: ALARM first (its hyprland/aquamarine/hyprgraphics sonames resolve; setup-omarchy-clean.sh stage 4; their own
+  # hyprland/mesa never win), then [omamobile] (its PINNED omarchy 4.5.0-3, the version their 31-patch series is checked
+  # against, plus the phone packages), then [omarchy] (walker, google-chrome, everything else).
+  if ! grep -q '^\[omamobile\]' "$CONF"; then
+    awk '/^\[omarchy\]/ { skip = 1; next } /^\[/ { skip = 0 } !skip' "$CONF" > "$CONF.new" && mv "$CONF.new" "$CONF"
+    printf '\n[omamobile]\nSigLevel = Required\nServer = https://pkgs.omamobile.org/stable/$arch\n' >> "$CONF"
+  fi
   grep -q '^\[omarchy\]' "$CONF" || printf '\n[omarchy]\nServer = https://pkgs.omarchy.org/stable/$arch\n' >> "$CONF"
-  grep -q '^\[omamobile\]' "$CONF" || printf '\n[omamobile]\nSigLevel = Required\nServer = https://pkgs.omamobile.org/stable/$arch\n' >> "$CONF"
   # Their phone-hardware packages never belong in an app (kernel, boot, Mali Mesa, device/modem/sensor stacks).
   ignore_pkgs "$CONF" linux-omamobile omamobile-boot-update omamobile-firstboot vulkan-panfrost omamobile-modem \
     omamobile-modem-sit omamobile-mmd omamobile-sensors omamobile-gnss omamobile-fingerprint omamobile-waydroid
@@ -288,11 +292,21 @@ EOF
   AS=""
   command -v setpriv >/dev/null 2>&1 && setpriv --reuid=1000 --regid=1000 --clear-groups true 2>/dev/null \
     && AS="setpriv --reuid=1000 --regid=1000 --clear-groups"
+  # It runs `chromium --version` under `set -o pipefail` (aborting without Chromium); we ship Google Chrome, so a
+  # setup-only `chromium` that answers with Chrome's version (same Chromium major, for its phone user agent).
+  SB=/tmp/omamobile-setup-bin; mkdir -p "$SB"
+  if ! command -v chromium >/dev/null 2>&1 && command -v google-chrome-stable >/dev/null 2>&1; then
+    printf '#!/bin/sh\nexec google-chrome-stable "$@"\n' > "$SB/chromium"; chmod 755 "$SB/chromium"
+  fi
   # shellcheck disable=SC2086  # AS is a command prefix
   $AS env HOME="$H" USER=desk LOGNAME=desk XDG_RUNTIME_DIR="$RTS" OMARCHY_PATH=/usr/share/omarchy \
-    PATH=/usr/local/bin:/usr/bin:/bin dbus-run-session --config-file="$H/.config/omarchy/proot-session-bus.conf" -- \
+    PATH=$SB:/usr/local/bin:/usr/bin:/bin dbus-run-session --config-file="$H/.config/omarchy/proot-session-bus.conf" -- \
     bash /usr/bin/omamobile-setup-user || log "note: omamobile-setup-user reported errors; continuing with what it set up"
-  rm -rf "$RTS"
+  rm -rf "$RTS" "$SB"
+  # Google Chrome reads ~/.config/chrome-flags.conf, not chromium-flags.conf: same phone lines (mobile user agent,
+  # scale 0.83, Wayland IME for squeekboard). start-omamobile.sh adds LinuxDesk's flags in a marked block every Start.
+  [ -f "$H/.config/chromium-flags.conf" ] && [ ! -e "$H/.config/chrome-flags.conf" ] \
+    && cp "$H/.config/chromium-flags.conf" "$H/.config/chrome-flags.conf"
   # LinuxDesk overrides. shell.json: no idle lock (Omarchy's lock needs PAM/logind; Android's lock protects the phone),
   # and no fingerprint plugin (no sensor in an app).
   python3 - "$H/.config/omarchy/shell.json" <<'PY' || log "note: shell.json not adjusted"

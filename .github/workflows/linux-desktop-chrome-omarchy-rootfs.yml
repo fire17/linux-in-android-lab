@@ -1,0 +1,141 @@
+# Prebuilt Omarchy rootfs (Tami 2026-11-20 06:56: publish approved): run our first-run setup ONCE on a native arm64
+# runner instead of 30-50 min of pacman under PRoot on the phone, then publish the finished tree as a GitHub Release
+# asset. The app (linux/PrebuiltRootfs.kt) HEADs the asset; when it answers 200 it downloads it with 8 parallel Range
+# requests, streams zstd -> tar into the distro's rootfs dir and checks the sha256; otherwise it falls back unchanged.
+#
+#   distro=omarchy        -> tag omarchy-rootfs-v1        asset omarchy-rootfs.tar.zst        (setup-omarchy.sh + look + apps)
+#   distro=omarchy-clean  -> tag omarchy-clean-rootfs-v1  asset omarchy-clean-rootfs.tar.zst  (setup-omarchy-clean.sh + hypr-stack)
+# Each asset has <asset>.sha256 (sha256sum output) and <asset>.json (size, sha256, package count, date).
+#
+# The setup scripts are written for PRoot; here they run as REAL root in a chroot (no qemu: the runner is aarch64).
+# Their memory gates read a fake meminfo (the runner has plenty). The pacman keyring's local MASTER SECRET key is
+# removed before packing (it must never be public); /etc/linuxdesk/prebuilt-rekey makes pacman-tune.sh generate a new
+# one on the phone the next time a setup script runs.
+name: omarchy-rootfs
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: "omarchy | omarchy-clean"
+        required: true
+        default: omarchy
+        type: choice
+        options: [omarchy, omarchy-clean]
+      apps:
+        description: "omarchy: also install Omarchy's apps (LibreOffice, Obsidian, ...)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+
+env:
+  APP_DIR: linux-desktop-chrome
+  ALARM_FILE: ArchLinuxARM-aarch64-latest.tar.gz
+
+jobs:
+  rootfs:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    env:
+      DISTRO: ${{ inputs.distro }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Names
+        run: |
+          echo "TAG=${DISTRO}-rootfs-v1" >> "$GITHUB_ENV"
+          echo "ASSET=${DISTRO}-rootfs.tar.zst" >> "$GITHUB_ENV"
+          echo "R=$RUNNER_TEMP/rootfs" >> "$GITHUB_ENV"
+          df -h / ; nproc ; free -g
+
+      - name: Download Arch Linux ARM aarch64 (md5-checked against the mirror)
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          for m in https://fl.us.mirror.archlinuxarm.org/os/ https://ca.us.mirror.archlinuxarm.org/os/ https://de3.mirror.archlinuxarm.org/os/; do
+            if curl -fsSL --retry 3 -o "$ALARM_FILE.md5" "$m$ALARM_FILE.md5" && curl -fL --retry 3 -o "$ALARM_FILE" "$m$ALARM_FILE" \
+               && md5sum -c "$ALARM_FILE.md5"; then echo "from $m"; exit 0; fi
+          done
+          exit 1
+
+      - name: Extract (kernel, firmware, modules dropped as on the phone)
+        run: |
+          set -e
+          sudo mkdir -p "$R"
+          sudo tar -xpzf "$RUNNER_TEMP/$ALARM_FILE" -C "$R" --numeric-owner
+          sudo rm -rf "$R"/boot/* "$R"/usr/lib/firmware/* "$R"/usr/lib/modules/*
+          rm -f "$RUNNER_TEMP/$ALARM_FILE"
+          # The app's writeGuestConfig does the same on the phone.
+          sudo rm -f "$R/etc/resolv.conf"
+          sudo cp /etc/resolv.conf "$R/etc/resolv.conf"
+          # Helpers exactly as the app installs them (RootfsInstaller.installHelpers).
+          sudo mkdir -p "$R/opt/linuxdesk" "$R/etc/linuxdesk" "$R/root" "$R/tmp/.X11-unix"
+          sudo cp -a "$APP_DIR/app/src/main/assets/linuxdesk/." "$R/opt/linuxdesk/"
+          sudo find "$R/opt/linuxdesk" -name '*.sh' -exec chmod 755 {} +
+          # Hyprland desktop: setup-omarchy.sh then installs the sway set too (start-hyprland.sh's fallback).
+          echo hyprland | sudo tee "$R/etc/linuxdesk/desktop"
+          printf 'MemTotal: 16000000 kB\nMemAvailable: 12000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n' | sudo tee "$R/tmp/meminfo"
+          sudo mount --rbind /dev "$R/dev"; sudo mount --make-rslave "$R/dev"
+          sudo mount -t proc proc "$R/proc"
+          sudo mount --rbind /sys "$R/sys"; sudo mount --make-rslave "$R/sys"
+
+      - name: Run the LinuxDesk setup inside the guest
+        run: |
+          set -e
+          g() { sudo chroot "$R" /usr/bin/env -i HOME=/root LANG=C.UTF-8 TERM=dumb LINUXDESK_MEMINFO=/tmp/meminfo \
+                  PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin "$@"; }
+          if [ "$DISTRO" = omarchy-clean ]; then S=/opt/linuxdesk/setup-omarchy-clean.sh; else S=/opt/linuxdesk/setup-omarchy.sh; fi
+          # Stages are resumable: one retry after a transient mirror error.
+          g sh "$S" || { echo "::warning::setup failed once; retrying"; g sh "$S"; }
+          if [ "$DISTRO" = omarchy-clean ]; then
+            g sh "$S" hypr-stack || echo "::warning::hypr-stack failed (the app fetches it in the background instead)"
+          else
+            g sh "$S" look || true
+            g sh "$S" sway || true
+            if [ "${{ inputs.apps }}" = true ]; then g sh "$S" apps || true; fi
+          fi
+          PKGS=$(g pacman -Q | wc -l)
+          echo "PKGS=$PKGS" >> "$GITHUB_ENV"
+          echo "OMARCHY_VER=$(g pacman -Q omarchy 2>/dev/null | cut -d' ' -f2 || true)" >> "$GITHUB_ENV"
+          ls -la "$R/etc/linuxdesk/"
+
+      - name: Strip caches and secrets
+        run: |
+          set -e
+          sudo umount -R "$R/dev" "$R/proc" "$R/sys" || sudo umount -lR "$R/dev" "$R/proc" "$R/sys"
+          g() { sudo chroot "$R" /usr/bin/env -i PATH=/usr/bin "$@"; }
+          sudo rm -rf "$R"/var/cache/pacman/pkg/* "$R"/var/lib/pacman/sync/* "$R"/var/cache/linuxdesk \
+                      "$R"/var/log/* "$R"/tmp/* "$R"/var/tmp/* "$R"/root/.cache "$R"/home/*/.cache \
+                      "$R"/usr/share/doc/* "$R"/usr/share/man/* "$R"/usr/share/gtk-doc/*
+          # Never publish the keyring's local master secret key (it lsigns the distro keys).
+          sudo rm -rf "$R"/etc/pacman.d/gnupg/private-keys-v1.d "$R"/etc/pacman.d/gnupg/secring.gpg \
+                      "$R"/etc/pacman.d/gnupg/S.* "$R"/etc/pacman.d/gnupg/*.lock "$R"/etc/pacman.d/gnupg/.#*
+          sudo rm -f "$R/etc/machine-id" "$R"/etc/ssh/ssh_host_* "$R/etc/resolv.conf"
+          echo 1 | sudo tee "$R/etc/linuxdesk/prebuilt-rekey"
+          printf '%s %s %s\n' "$TAG" "$(date -u +%FT%TZ)" "$GITHUB_SHA" | sudo tee "$R/etc/linuxdesk/prebuilt"
+          sudo du -sh "$R"
+
+      - name: Pack (tar --numeric-owner --xattrs | zstd -19 --long=27)
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          sudo tar --numeric-owner --xattrs --xattrs-include='*' -C "$R" -cf - . | zstd -19 --long=27 -T0 -q -o "$ASSET"
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          SIZE=$(stat -c %s "$ASSET"); SHA=$(cut -d' ' -f1 "$ASSET.sha256")
+          [ "$SIZE" -lt 2147000000 ] || { echo "::error::$ASSET is $SIZE bytes, over GitHub's 2 GiB asset limit"; exit 1; }
+          printf '{"tag":"%s","asset":"%s","distro":"%s","size":%s,"sha256":"%s","packages":%s,"omarchy":"%s","date":"%s","commit":"%s","run":"%s"}\n' \
+            "$TAG" "$ASSET" "$DISTRO" "$SIZE" "$SHA" "${PKGS:-0}" "${OMARCHY_VER:-}" "$(date -u +%FT%TZ)" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$ASSET.json"
+          cat "$ASSET.json"
+
+      - name: Publish the release asset
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --latest=false --title "$TAG" \
+              --notes "Prebuilt LinuxDesk $DISTRO rootfs (Arch Linux ARM aarch64 + the LinuxDesk setup already run). Built by the omarchy-rootfs workflow; the app downloads it with 8 parallel ranges and checks the sha256."
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$ASSET" "$ASSET.sha256" "$ASSET.json"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
